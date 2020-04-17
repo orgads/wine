@@ -182,11 +182,10 @@ static HRESULT WINAPI IDirectPlaySPImpl_GetSPPlayerData( IDirectPlaySP *iface, D
 
   if( FAILED(hr) )
   {
-    TRACE( "Couldn't get player data: %s\n", DPLAYX_HresultToString(hr) );
-    return DPERR_INVALIDPLAYER;
+    ERR( "Couldn't get player data: %s\n", DPLAYX_HresultToString(hr) );
+    return hr;
   }
 
-  /* What to do in the case where there is nothing set yet? */
   if( dwFlags == DPSET_LOCAL )
   {
     *lplpData     = lpPlayerData->lpPlayerLocalData;
@@ -198,12 +197,7 @@ static HRESULT WINAPI IDirectPlaySPImpl_GetSPPlayerData( IDirectPlaySP *iface, D
     *lpdwDataSize = lpPlayerData->dwPlayerRemoteDataSize;
   }
 
-  if( *lplpData == NULL )
-  {
-    hr = DPERR_GENERIC;
-  }
-
-  return hr;
+  return DP_OK;
 }
 
 static HRESULT WINAPI IDirectPlaySPImpl_HandleMessage( IDirectPlaySP *iface, void *lpMessageBody,
@@ -277,13 +271,16 @@ static HRESULT WINAPI IDirectPlaySPImpl_SetSPPlayerData( IDirectPlaySP *iface, D
   lpPlayerData = HeapAlloc( GetProcessHeap(), HEAP_ZERO_MEMORY, dwDataSize );
   CopyMemory( lpPlayerData, lpData, dwDataSize );
 
+  /* If we have data already allocated, free it and replace it */
   if( dwFlags == DPSET_LOCAL )
   {
+    HeapFree( GetProcessHeap(), 0, lpPlayerEntry->lpPlayerLocalData );
     lpPlayerEntry->lpPlayerLocalData = lpPlayerData;
     lpPlayerEntry->dwPlayerLocalDataSize = dwDataSize;
   }
   else if( dwFlags == DPSET_REMOTE )
   {
+    HeapFree( GetProcessHeap(), 0, lpPlayerEntry->lpPlayerRemoteData );
     lpPlayerEntry->lpPlayerRemoteData = lpPlayerData;
     lpPlayerEntry->dwPlayerRemoteDataSize = dwDataSize;
   }
@@ -309,48 +306,21 @@ static HRESULT WINAPI IDirectPlaySPImpl_GetSPData( IDirectPlaySP *iface, void **
         DWORD *lpdwDataSize, DWORD dwFlags )
 {
   IDirectPlaySPImpl *This = impl_from_IDirectPlaySP( iface );
-  HRESULT hr = DP_OK;
 
   TRACE( "(%p)->(%p,%p,0x%08x)\n", This, lplpData, lpdwDataSize, dwFlags );
 
-#if 0
-  /* This is what the documentation says... */
-  if( dwFlags != DPSET_REMOTE )
-  {
-    return DPERR_INVALIDPARAMS;
-  }
-#else
-  /* ... but most service providers call this with 1 */
-  /* Guess that this is using a DPSET_LOCAL or DPSET_REMOTE type of
-   * thing?
-   */
-  if( dwFlags != DPSET_REMOTE )
-  {
-    TRACE( "Undocumented dwFlags 0x%08x used\n", dwFlags );
-  }
-#endif
-
-  /* FIXME: What to do in the case where this isn't initialized yet? */
-
-  /* Yes, we're supposed to return a pointer to the memory we have stored! */
   if( dwFlags == DPSET_REMOTE )
   {
     *lpdwDataSize = This->remote_data_size;
     *lplpData = This->remote_data;
-
-    if( !This->remote_data )
-      hr = DPERR_GENERIC;
   }
   else if( dwFlags == DPSET_LOCAL )
   {
     *lpdwDataSize = This->local_data_size;
     *lplpData = This->local_data;
-
-    if( !This->local_data )
-      hr = DPERR_GENERIC;
   }
 
-  return hr;
+  return DP_OK;
 }
 
 static HRESULT WINAPI IDirectPlaySPImpl_SetSPData( IDirectPlaySP *iface, void *lpData,
@@ -360,23 +330,6 @@ static HRESULT WINAPI IDirectPlaySPImpl_SetSPData( IDirectPlaySP *iface, void *l
   LPVOID lpSpData;
 
   TRACE( "(%p)->(%p,0x%08x,0x%08x)\n", This, lpData, dwDataSize, dwFlags );
-
-#if 0
-  /* This is what the documentation says... */
-  if( dwFlags != DPSET_REMOTE )
-  {
-    return DPERR_INVALIDPARAMS;
-  }
-#else
-  /* ... but most service providers call this with 1 */
-  /* Guess that this is using a DPSET_LOCAL or DPSET_REMOTE type of
-   * thing?
-   */
-  if( dwFlags != DPSET_REMOTE )
-  {
-    TRACE( "Undocumented dwFlags 0x%08x used\n", dwFlags );
-  }
-#endif
 
   lpSpData = HeapAlloc( GetProcessHeap(), HEAP_ZERO_MEMORY, dwDataSize );
   CopyMemory( lpSpData, lpData, dwDataSize );
