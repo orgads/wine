@@ -64,8 +64,8 @@ static HRESULT DP_SetSessionDesc( IDirectPlayImpl *This, const DPSESSIONDESC2 *l
         DWORD dwFlags, BOOL bInitial, BOOL bAnsi );
 static HRESULT DP_SP_SendEx( IDirectPlayImpl *This, DWORD dwFlags, void *lpData, DWORD dwDataSize,
         DWORD dwPriority, DWORD dwTimeout, void *lpContext, DWORD *lpdwMsgID );
-static BOOL DP_BuildSPCompoundAddr( LPGUID lpcSpGuid, LPVOID* lplpAddrBuf,
-                                    LPDWORD lpdwBufSize );
+static BOOL DP_BuildCompoundAddr( GUID guidDataType, LPGUID lpcSpGuid,
+                                  LPVOID* lplpAddrBuf, LPDWORD lpdwBufSize );
 
 static DPID DP_GetRemoteNextObjectId(void);
 
@@ -2524,7 +2524,8 @@ static HRESULT WINAPI IDirectPlay4Impl_EnumSessions( IDirectPlay4 *iface, DPSESS
     {
         WARN( "Hack providing TCP/IP SP for lobby provider activated\n" );
 
-        if ( !DP_BuildSPCompoundAddr( (GUID*)&DPSPGUID_TCPIP, &connection, &size ) )
+        if ( !DP_BuildCompoundAddr( DPAID_ServiceProvider, (GUID*)&DPSPGUID_TCPIP,
+                                &connection, &size ) )
         {
             ERR( "Can't build compound addr\n" );
             return DPERR_GENERIC;
@@ -4322,15 +4323,16 @@ static HRESULT WINAPI IDirectPlay4Impl_DeleteGroupFromGroup( IDirectPlay4 *iface
 
     return DP_OK;
 }
-
-static BOOL DP_BuildSPCompoundAddr( LPGUID lpcSpGuid, LPVOID* lplpAddrBuf,
-                                    LPDWORD lpdwBufSize )
+static BOOL DP_BuildCompoundAddr( GUID guidDataType,
+                                  LPGUID lpcSpGuid,
+                                  LPVOID* lplpAddrBuf,
+                                  LPDWORD lpdwBufSize )
 {
   DPCOMPOUNDADDRESSELEMENT dpCompoundAddress;
   HRESULT                  hr;
 
   dpCompoundAddress.dwDataSize = sizeof( GUID );
-  dpCompoundAddress.guidDataType = DPAID_ServiceProvider;
+  dpCompoundAddress.guidDataType = guidDataType;
   dpCompoundAddress.lpData = lpcSpGuid;
 
   *lplpAddrBuf = NULL;
@@ -4376,12 +4378,28 @@ static HRESULT WINAPI IDirectPlay3Impl_EnumConnections( IDirectPlay3 *iface,
             flags );
 }
 
-static HRESULT WINAPI IDirectPlay4AImpl_EnumConnections( IDirectPlay4A *iface,
-        const GUID *lpguidApplication, LPDPENUMCONNECTIONSCALLBACK lpEnumCallback, void *lpContext,
-        DWORD dwFlags )
+static HRESULT WINAPI DP_IF_EnumConnections
+          ( IDirectPlayImpl *This, const GUID *lpguidApplication,
+            LPDPENUMCONNECTIONSCALLBACK lpEnumCallback, void *lpContext,
+            DWORD dwFlags, BOOL bAnsi )
 {
-  IDirectPlayImpl *This = impl_from_IDirectPlay4A( iface );
-  TRACE("(%p)->(%p,%p,%p,0x%08x)\n", This, lpguidApplication, lpEnumCallback, lpContext, dwFlags );
+  HKEY hkResult;
+  WCHAR searchSubKeySP[] = {
+    'S', 'O', 'F', 'T', 'W', 'A', 'R', 'E', '\\',
+    'M', 'i', 'c', 'r', 'o', 's', 'o', 'f', 't', '\\',
+    'D', 'i', 'r', 'e', 'c', 't', 'P', 'l', 'a', 'y', '\\',
+    'S', 'e', 'r', 'v', 'i', 'c', 'e', ' ', 'P', 'r', 'o', 'v', 'i', 'd', 'e', 'r', 's', 0 };
+  WCHAR searchSubKeyLP[] = {
+    'S', 'O', 'F', 'T', 'W', 'A', 'R', 'E', '\\',
+    'M', 'i', 'c', 'r', 'o', 's', 'o', 'f', 't', '\\',
+    'D', 'i', 'r', 'e', 'c', 't', 'P', 'l', 'a', 'y', '\\',
+    'L', 'o', 'b', 'b', 'y', ' ', 'P', 'r', 'o', 'v', 'i', 'd', 'e', 'r', 's', 0 };
+  WCHAR guidDataSubKey[] = { 'G', 'u', 'i', 'd', 0 };
+  WCHAR subKeyName[255]; /* 255 is the maximum key size according to MSDN */
+  DWORD dwIndex, sizeOfSubKeyName = ARRAY_SIZE( subKeyName );
+  FILETIME filetime;
+
+  TRACE("(%p)->(%p,%p,%p,0x%08x,%d)\n", This, lpguidApplication, lpEnumCallback, lpContext, dwFlags, bAnsi );
 
   /* A default dwFlags (0) is backwards compatible -- DPCONNECTION_DIRECTPLAY */
   if( dwFlags == 0 )
@@ -4390,233 +4408,134 @@ static HRESULT WINAPI IDirectPlay4AImpl_EnumConnections( IDirectPlay4A *iface,
   }
 
   if( ! ( ( dwFlags & DPCONNECTION_DIRECTPLAY ) ||
-          ( dwFlags & DPCONNECTION_DIRECTPLAYLOBBY ) )
-    )
+          ( dwFlags & DPCONNECTION_DIRECTPLAYLOBBY ) ) )
   {
     return DPERR_INVALIDFLAGS;
   }
 
   if( !lpEnumCallback )
   {
-     return DPERR_INVALIDPARAMS;
+    return DPERR_INVALIDPARAMS;
   }
 
-  /* Enumerate DirectPlay service providers */
-  if( dwFlags & DPCONNECTION_DIRECTPLAY )
+
+  /* Need to loop over the service providers in the registry */
+  if( RegOpenKeyExW( HKEY_LOCAL_MACHINE,
+                     ( dwFlags & DPCONNECTION_DIRECTPLAY ) ? searchSubKeySP
+                                                           : searchSubKeyLP,
+                     0, KEY_READ, &hkResult ) != ERROR_SUCCESS )
   {
-    HKEY hkResult;
-    LPCSTR searchSubKey    = "SOFTWARE\\Microsoft\\DirectPlay\\Service Providers";
-    LPCSTR guidDataSubKey  = "Guid";
-    char subKeyName[51];
-    DWORD dwIndex, sizeOfSubKeyName=50;
-    FILETIME filetime;
-
-    /* Need to loop over the service providers in the registry */
-    if( RegOpenKeyExA( HKEY_LOCAL_MACHINE, searchSubKey,
-                         0, KEY_READ, &hkResult ) != ERROR_SUCCESS )
-    {
-      /* Hmmm. Does this mean that there are no service providers? */
-      ERR(": no service providers?\n");
-      return DP_OK;
-    }
-
-
-    /* Traverse all the service providers we have available */
-    for( dwIndex=0;
-         RegEnumKeyExA( hkResult, dwIndex, subKeyName, &sizeOfSubKeyName,
-                        NULL, NULL, NULL, &filetime ) != ERROR_NO_MORE_ITEMS;
-         ++dwIndex, sizeOfSubKeyName=51 )
-    {
-
-      HKEY     hkServiceProvider;
-      GUID     serviceProviderGUID;
-      DWORD    returnTypeGUID, sizeOfReturnBuffer = 50;
-      char     returnBuffer[51];
-      WCHAR    buff[51];
-      DPNAME   dpName;
-      BOOL     bBuildPass;
-
-      LPVOID                   lpAddressBuffer = NULL;
-      DWORD                    dwAddressBufferSize = 0;
-
-      TRACE(" this time through: %s\n", subKeyName );
-
-      /* Get a handle for this particular service provider */
-      if( RegOpenKeyExA( hkResult, subKeyName, 0, KEY_READ,
-                         &hkServiceProvider ) != ERROR_SUCCESS )
-      {
-         ERR(": what the heck is going on?\n" );
-         continue;
-      }
-
-      if( RegQueryValueExA( hkServiceProvider, guidDataSubKey,
-                            NULL, &returnTypeGUID, (LPBYTE)returnBuffer,
-                            &sizeOfReturnBuffer ) != ERROR_SUCCESS )
-      {
-        ERR(": missing GUID registry data members\n" );
-        RegCloseKey(hkServiceProvider);
-        continue;
-      }
-      RegCloseKey(hkServiceProvider);
-
-      /* FIXME: Check return types to ensure we're interpreting data right */
-      MultiByteToWideChar( CP_ACP, 0, returnBuffer, -1, buff, ARRAY_SIZE( buff ));
-      CLSIDFromString( buff, &serviceProviderGUID );
-      /* FIXME: Have I got a memory leak on the serviceProviderGUID? */
-
-      /* Fill in the DPNAME struct for the service provider */
-      dpName.dwSize             = sizeof( dpName );
-      dpName.dwFlags            = 0;
-      dpName.u1.lpszShortNameA = subKeyName;
-      dpName.u2.lpszLongNameA  = NULL;
-
-      /* Create the compound address for the service provider.
-       * NOTE: This is a gruesome architectural scar right now.  DP
-       * uses DPL and DPL uses DP.  Nasty stuff. This may be why the
-       * native dll just gets around this little bit by allocating an
-       * 80 byte buffer which isn't even filled with a valid compound
-       * address. Oh well. Creating a proper compound address is the
-       * way to go anyways despite this method taking slightly more
-       * heap space and realtime :) */
-
-      bBuildPass = DP_BuildSPCompoundAddr( &serviceProviderGUID,
-                                           &lpAddressBuffer,
-                                           &dwAddressBufferSize );
-      if( !bBuildPass )
-      {
-        ERR( "Can't build compound addr\n" );
-        return DPERR_GENERIC;
-      }
-
-      /* The enumeration will return FALSE if we are not to continue */
-      if( !lpEnumCallback( &serviceProviderGUID, lpAddressBuffer, dwAddressBufferSize,
-                           &dpName, dwFlags, lpContext ) )
-      {
-         HeapFree( GetProcessHeap(), 0, lpAddressBuffer );
-         return DP_OK;
-      }
-      HeapFree( GetProcessHeap(), 0, lpAddressBuffer );
-    }
+    /* Hmmm. Does this mean that there are no service providers? */
+    ERR(": no service providers?\n");
+    return DP_OK;
   }
 
-  /* Enumerate DirectPlayLobby service providers */
-  if( dwFlags & DPCONNECTION_DIRECTPLAYLOBBY )
+
+  /* Traverse all the service providers we have available */
+  for( dwIndex=0;
+       RegEnumKeyExW( hkResult, dwIndex, subKeyName, &sizeOfSubKeyName,
+                      NULL, NULL, NULL, &filetime ) != ERROR_NO_MORE_ITEMS;
+       ++dwIndex, sizeOfSubKeyName = ARRAY_SIZE( subKeyName ) )
   {
-    HKEY hkResult;
-    LPCSTR searchSubKey    = "SOFTWARE\\Microsoft\\DirectPlay\\Lobby Providers";
-    LPCSTR guidDataSubKey  = "Guid";
-    char subKeyName[51];
-    DWORD dwIndex, sizeOfSubKeyName=50;
-    FILETIME filetime;
+    HKEY     hkServiceProvider;
+    GUID     serviceProviderGUID;
+    WCHAR    guidKeyContent[39];
+    DWORD    sizeOfReturnBuffer = sizeof(guidKeyContent);
+    DPNAME   dpName;
+    BOOL     continueEnumeration = TRUE;
 
-    /* Need to loop over the service providers in the registry */
-    if( RegOpenKeyExA( HKEY_LOCAL_MACHINE, searchSubKey,
-                         0, KEY_READ, &hkResult ) != ERROR_SUCCESS )
+    LPVOID   lpAddressBuffer = NULL;
+    DWORD    dwAddressBufferSize = 0;
+
+
+    TRACE(" this time through: %s\n", debugstr_w(subKeyName) );
+
+    /* Get a handle for this particular service provider */
+    if( RegOpenKeyExW( hkResult, subKeyName, 0, KEY_READ,
+                       &hkServiceProvider ) != ERROR_SUCCESS )
     {
-      TRACE("No Lobby Providers have been registered.\n");
-      return DP_OK;
+      ERR(": what the heck is going on?\n" );
+      continue;
     }
 
-
-    /* Traverse all the lobby providers we have available */
-    for( dwIndex=0;
-         RegEnumKeyExA( hkResult, dwIndex, subKeyName, &sizeOfSubKeyName,
-                        NULL, NULL, NULL, &filetime ) != ERROR_NO_MORE_ITEMS;
-         ++dwIndex, sizeOfSubKeyName=51 )
+    if( RegQueryValueExW( hkServiceProvider, guidDataSubKey,
+                          NULL, NULL, (LPBYTE)guidKeyContent,
+                          &sizeOfReturnBuffer ) != ERROR_SUCCESS )
     {
-
-      HKEY     hkServiceProvider;
-      GUID     serviceProviderGUID;
-      DWORD    returnTypeGUID, sizeOfReturnBuffer = 50;
-      char     returnBuffer[51];
-      WCHAR    buff[51];
-      DPNAME   dpName;
-      HRESULT  hr;
-
-      DPCOMPOUNDADDRESSELEMENT dpCompoundAddress;
-      LPVOID                   lpAddressBuffer = NULL;
-      DWORD                    dwAddressBufferSize = 0;
-
-      TRACE(" this time through: %s\n", subKeyName );
-
-      /* Get a handle for this particular service provider */
-      if( RegOpenKeyExA( hkResult, subKeyName, 0, KEY_READ,
-                         &hkServiceProvider ) != ERROR_SUCCESS )
-      {
-         ERR(": what the heck is going on?\n" );
-         continue;
-      }
-
-      if( RegQueryValueExA( hkServiceProvider, guidDataSubKey,
-                            NULL, &returnTypeGUID, (LPBYTE)returnBuffer,
-                            &sizeOfReturnBuffer ) != ERROR_SUCCESS )
-      {
-        ERR(": missing GUID registry data members\n" );
-        RegCloseKey(hkServiceProvider);
-        continue;
-      }
+      ERR(": missing GUID registry data members\n" );
       RegCloseKey(hkServiceProvider);
-
-      /* FIXME: Check return types to ensure we're interpreting data right */
-      MultiByteToWideChar( CP_ACP, 0, returnBuffer, -1, buff, ARRAY_SIZE( buff ));
-      CLSIDFromString( buff, &serviceProviderGUID );
-      /* FIXME: Have I got a memory leak on the serviceProviderGUID? */
-
-      /* Fill in the DPNAME struct for the service provider */
-      dpName.dwSize             = sizeof( dpName );
-      dpName.dwFlags            = 0;
-      dpName.u1.lpszShortNameA = subKeyName;
-      dpName.u2.lpszLongNameA  = NULL;
-
-      /* Create the compound address for the service provider.
-         NOTE: This is a gruesome architectural scar right now. DP uses DPL and DPL uses DP
-               nast stuff. This may be why the native dll just gets around this little bit by
-               allocating an 80 byte buffer which isn't even a filled with a valid compound
-               address. Oh well. Creating a proper compound address is the way to go anyways
-               despite this method taking slightly more heap space and realtime :) */
-
-      dpCompoundAddress.guidDataType = DPAID_LobbyProvider;
-      dpCompoundAddress.dwDataSize   = sizeof( GUID );
-      dpCompoundAddress.lpData       = &serviceProviderGUID;
-
-      if( ( hr = DPL_CreateCompoundAddress( &dpCompoundAddress, 1, lpAddressBuffer,
-                                     &dwAddressBufferSize, TRUE ) ) != DPERR_BUFFERTOOSMALL )
-      {
-        ERR( "can't get buffer size: %s\n", DPLAYX_HresultToString( hr ) );
-        return hr;
-      }
-
-      /* Now allocate the buffer */
-      lpAddressBuffer = HeapAlloc( GetProcessHeap(), HEAP_ZERO_MEMORY, dwAddressBufferSize );
-
-      if( ( hr = DPL_CreateCompoundAddress( &dpCompoundAddress, 1, lpAddressBuffer,
-                                     &dwAddressBufferSize, TRUE ) ) != DP_OK )
-      {
-        ERR( "can't create address: %s\n", DPLAYX_HresultToString( hr ) );
-        HeapFree( GetProcessHeap(), 0, lpAddressBuffer );
-        return hr;
-      }
-
-      /* The enumeration will return FALSE if we are not to continue */
-      if( !lpEnumCallback( &serviceProviderGUID, lpAddressBuffer, dwAddressBufferSize,
-                           &dpName, dwFlags, lpContext ) )
-      {
-         HeapFree( GetProcessHeap(), 0, lpAddressBuffer );
-         return DP_OK;
-      }
-      HeapFree( GetProcessHeap(), 0, lpAddressBuffer );
+      continue;
     }
+    RegCloseKey(hkServiceProvider);
+
+    CLSIDFromString( guidKeyContent, &serviceProviderGUID );
+
+    /* Fill in the DPNAME struct for the service provider */
+    dpName.dwSize = sizeof( dpName );
+    dpName.dwFlags = 0;
+    if ( bAnsi )
+    {
+      dpName.u1.lpszShortNameA = HeapAlloc( GetProcessHeap(), HEAP_ZERO_MEMORY,
+                                            sizeOfSubKeyName+1 );
+      WideCharToMultiByte( CP_ACP, 0, subKeyName,
+                           -1, dpName.u1.lpszShortNameA, sizeOfSubKeyName+1, NULL, NULL);
+      dpName.u2.lpszLongNameA = NULL;
+    }
+    else
+    {
+      dpName.u1.lpszShortName = subKeyName;
+      dpName.u2.lpszLongName = NULL;
+    }
+
+    /* Create the compound address for the service provider.
+     * NOTE: This is a gruesome architectural scar right now.  DP
+     *       uses DPL and DPL uses DP.  Nasty stuff. This may be why the
+     *       native dll just gets around this little bit by allocating an
+     *       80 byte buffer which isn't even filled with a valid compound
+     *       address. Oh well. Creating a proper compound address is the
+     *       way to go anyways despite this method taking slightly more
+     *       heap space and realtime :) */
+
+    if ( DP_BuildCompoundAddr( ( ( dwFlags & DPCONNECTION_DIRECTPLAY )
+                                 ? DPAID_ServiceProvider
+                                 : DPAID_LobbyProvider ),
+                               &serviceProviderGUID,
+                               &lpAddressBuffer,
+                               &dwAddressBufferSize ) )
+    {
+      /* The enumeration will return FALSE if we are not to continue */
+      continueEnumeration = lpEnumCallback( &serviceProviderGUID, lpAddressBuffer,
+                                            dwAddressBufferSize, &dpName,
+                                            dwFlags, lpContext );
+    }
+    else
+    {
+      ERR( "Couldn't build compound address\n" );
+    }
+
+    HeapFree( GetProcessHeap(), 0, lpAddressBuffer );
+    if ( bAnsi )
+      HeapFree( GetProcessHeap(), 0, dpName.u1.lpszShortNameA );
+
+    if (!continueEnumeration)
+      return DP_OK;
   }
 
   return DP_OK;
+}
+
+static HRESULT WINAPI IDirectPlay4AImpl_EnumConnections( IDirectPlay4A *iface,
+        const GUID *application, LPDPENUMCONNECTIONSCALLBACK enumcb, void *context, DWORD flags )
+{
+    IDirectPlayImpl *This = impl_from_IDirectPlay4A( iface );
+    return DP_IF_EnumConnections( This, application, enumcb, context, flags, TRUE );
 }
 
 static HRESULT WINAPI IDirectPlay4Impl_EnumConnections( IDirectPlay4 *iface,
         const GUID *application, LPDPENUMCONNECTIONSCALLBACK enumcb, void *context, DWORD flags )
 {
     IDirectPlayImpl *This = impl_from_IDirectPlay4( iface );
-    return IDirectPlayX_EnumConnections( &This->IDirectPlay4A_iface, application, enumcb, context,
-            flags );
+    return DP_IF_EnumConnections( This, application, enumcb, context, flags, FALSE );
 }
 
 static HRESULT WINAPI IDirectPlay3AImpl_EnumGroupsInGroup( IDirectPlay3A *iface, DPID group,
