@@ -34,6 +34,7 @@ DWORD CreateLobbyMessageReceptionThread( HANDLE hNotifyEvent, HANDLE hStart,
 
 HRESULT DP_MSG_SendRequestPlayerId( IDirectPlayImpl *This, DWORD dwFlags,
                                     LPDPID lpdipidAllocatedId ) DECLSPEC_HIDDEN;
+HRESULT DP_MSG_SendCreatePlayer( IDirectPlayImpl* This, lpPlayerData lpData ) DECLSPEC_HIDDEN;
 HRESULT DP_MSG_ForwardPlayerCreation( IDirectPlayImpl *This, DPID dpidServer ) DECLSPEC_HIDDEN;
 void DP_MSG_ReplyToEnumPlayersRequest( IDirectPlayImpl* lpDP, LPVOID* lplpReply,
                                        LPDWORD lpdwMsgSize ) DECLSPEC_HIDDEN;
