@@ -1535,7 +1535,6 @@ static HRESULT DP_IF_CreatePlayer( IDirectPlayImpl *This, void *lpMsgHdr, DPID *
   HRESULT hr = DP_OK;
   lpPlayerData lpPData;
   lpPlayerList lpPList;
-  DWORD dwCreateFlags = 0;
 
   TRACE( "(%p)->(%p,%p,%p,%p,0x%08x,0x%08x,%u)\n",
          This, lpidPlayer, lpPlayerName, hEvent, lpData,
@@ -1562,22 +1561,22 @@ static HRESULT DP_IF_CreatePlayer( IDirectPlayImpl *This, void *lpMsgHdr, DPID *
       if( *lpidPlayer == DPID_SERVERPLAYER )
       {
         /* Server player for the host interface */
-        dwCreateFlags |= DPLAYI_PLAYER_APPSERVER;
+        dwFlags |= DPLAYI_PLAYER_APPSERVER;
       }
       else if( *lpidPlayer == DPID_NAME_SERVER )
       {
         /* Name server - master of everything */
-        dwCreateFlags |= (DPLAYI_PLAYER_NAMESRVR|DPLAYI_PLAYER_SYSPLAYER);
+        dwFlags |= (DPLAYI_PLAYER_NAMESRVR|DPLAYI_PLAYER_SYSPLAYER);
       }
       else
       {
         /* Server player for a non host interface */
-        dwCreateFlags |= DPLAYI_PLAYER_SYSPLAYER;
+        dwFlags |= DPLAYI_PLAYER_SYSPLAYER;
       }
     }
 
     if( lpMsgHdr == NULL )
-      dwCreateFlags |= DPLAYI_PLAYER_PLAYERLOCAL;
+      dwFlags |= DPLAYI_PLAYER_PLAYERLOCAL;
   }
 
   /* Verify we know how to handle all the flags */
@@ -1600,7 +1599,7 @@ static HRESULT DP_IF_CreatePlayer( IDirectPlayImpl *This, void *lpMsgHdr, DPID *
     }
     else
     {
-      hr = DP_MSG_SendRequestPlayerId( This, dwCreateFlags, lpidPlayer );
+      hr = DP_MSG_SendRequestPlayerId( This, dwFlags & 0x000000FF, lpidPlayer );
 
       if( FAILED(hr) )
       {
@@ -1624,9 +1623,7 @@ static HRESULT DP_IF_CreatePlayer( IDirectPlayImpl *This, void *lpMsgHdr, DPID *
 
   }
 
-  /* We pass creation flags, so we can distinguish sysplayers and not count them in the current
-     player total */
-  lpPData = DP_CreatePlayer( This, lpidPlayer, lpPlayerName, dwCreateFlags,
+  lpPData = DP_CreatePlayer( This, lpidPlayer, lpPlayerName, dwFlags,
                              hEvent, bAnsi );
   /* Create the list object and link it in */
   lpPList = HeapAlloc( GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof( *lpPList ) );
@@ -1652,7 +1649,7 @@ static HRESULT DP_IF_CreatePlayer( IDirectPlayImpl *This, void *lpMsgHdr, DPID *
     DPSP_CREATEPLAYERDATA data;
 
     data.idPlayer          = *lpidPlayer;
-    data.dwFlags           = dwCreateFlags;
+    data.dwFlags           = dwFlags;
     data.lpSPMessageHeader = lpMsgHdr;
     data.lpISP             = This->dp2->spData.lpISP;
 
