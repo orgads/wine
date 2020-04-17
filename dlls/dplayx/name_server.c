@@ -84,10 +84,10 @@ static DPQ_DECL_COMPARECB( cbUglyPig, GUID )
 }
 
 /* Store the given NS remote address for future reference */
-void NS_AddRemoteComputerAsNameServer( LPCVOID                      lpcNSAddrHdr,
-                                       DWORD                        dwHdrSize,
-                                       LPCDPMSG_ENUMSESSIONSREPLY   lpcMsg,
-                                       LPVOID                       lpNSInfo )
+void NS_AddRemoteComputerAsNameServer( LPCVOID                       lpcNSAddrHdr,
+                                       DWORD                         dwHdrSize,
+                                       LPCDPSP_MSG_ENUMSESSIONSREPLY lpcMsg,
+                                       LPVOID                        lpNSInfo )
 {
   DWORD len;
   lpNSCache     lpCache = (lpNSCache)lpNSInfo;
@@ -97,7 +97,7 @@ void NS_AddRemoteComputerAsNameServer( LPCVOID                      lpcNSAddrHdr
 
   /* See if we can find this session. If we can, remove it as it's a dup */
   DPQ_REMOVE_ENTRY_CB( lpCache->first, next, data->guidInstance, cbUglyPig,
-                       lpcMsg->sd.guidInstance, lpCacheNode );
+                       lpcMsg->SessionDescription.guidInstance, lpCacheNode );
 
   if( lpCacheNode != NULL )
   {
@@ -128,7 +128,7 @@ void NS_AddRemoteComputerAsNameServer( LPCVOID                      lpcNSAddrHdr
     return;
   }
 
-  *lpCacheNode->data = lpcMsg->sd;
+  *lpCacheNode->data = lpcMsg->SessionDescription;
   len = WideCharToMultiByte( CP_ACP, 0, (LPCWSTR)(lpcMsg+1), -1, NULL, 0, NULL, NULL );
   if ((lpCacheNode->data->u1.lpszSessionNameA = HeapAlloc( GetProcessHeap(), 0, len )))
   {
@@ -199,7 +199,7 @@ HRESULT NS_SendSessionRequestBroadcast( LPCGUID lpcGuid,
 
 {
   DPSP_ENUMSESSIONSDATA data;
-  LPDPMSG_ENUMSESSIONSREQUEST lpMsg;
+  LPDPSP_MSG_ENUMSESSIONS lpMsg;
 
   TRACE( "enumerating for guid %s\n", debugstr_guid( lpcGuid ) );
 
@@ -213,17 +213,17 @@ HRESULT NS_SendSessionRequestBroadcast( LPCGUID lpcGuid,
   data.bReturnStatus = (dwFlags & DPENUMSESSIONS_RETURNSTATUS) != 0;
 
 
-  lpMsg = (LPDPMSG_ENUMSESSIONSREQUEST)(((BYTE*)data.lpMessage)+lpSpData->dwSPHeaderSize);
+  lpMsg = (LPDPSP_MSG_ENUMSESSIONS) (((LPBYTE)data.lpMessage)+lpSpData->dwSPHeaderSize);
 
   /* Setup EnumSession request message */
-  lpMsg->envelope.dwMagic    = DPMSGMAGIC_DPLAYMSG;
-  lpMsg->envelope.wCommandId = DPMSGCMD_ENUMSESSIONSREQUEST;
-  lpMsg->envelope.wVersion   = DPMSGVER_DP6;
+  lpMsg->envelope.dwMagic    = DPMSG_SIGNATURE;
+  lpMsg->envelope.wCommandId = DPMSGCMD_ENUMSESSIONS;
+  lpMsg->envelope.wVersion   = DX61AVERSION;
 
-  lpMsg->dwPasswordSize = 0; /* FIXME: If enumerating passwords..? */
-  lpMsg->dwFlags        = dwFlags;
+  lpMsg->PasswordOffset = 0; /* FIXME: If enumerating passwords..? */
+  lpMsg->Flags          = dwFlags;
 
-  lpMsg->guidApplication = *lpcGuid;
+  lpMsg->ApplicationGuid = *lpcGuid;
 
   return (lpSpData->lpCB->EnumSessions)( &data );
 }
@@ -358,10 +358,10 @@ void NS_PruneSessionCache( LPVOID lpNSInfo )
 void NS_ReplyToEnumSessionsRequest( const void *lpcMsg, void **lplpReplyData, DWORD *lpdwReplySize,
         IDirectPlayImpl *lpDP )
 {
-  LPDPMSG_ENUMSESSIONSREPLY rmsg;
+  LPDPSP_MSG_ENUMSESSIONSREPLY rmsg;
   DWORD dwVariableSize;
   DWORD dwVariableLen;
-  /* LPCDPMSG_ENUMSESSIONSREQUEST msg = (LPDPMSG_ENUMSESSIONSREQUEST)lpcMsg; */
+  /* LPCDPSP_MSG_ENUMSESSIONS msg = (LPDPMSG_ENUMSESSIONS)lpcMsg; */
 
   /* FIXME: Should handle ANSI or WIDECHAR input. Currently just ANSI input */
   FIXME( ": few fixed + need to check request for response, might need UNICODE input ability.\n" );
@@ -376,16 +376,16 @@ void NS_ReplyToEnumSessionsRequest( const void *lpcMsg, void **lplpReplyData, DW
   *lplpReplyData = HeapAlloc( GetProcessHeap(), HEAP_ZERO_MEMORY,
                               *lpdwReplySize );
 
-  rmsg = (LPDPMSG_ENUMSESSIONSREPLY)( (BYTE*)*lplpReplyData +
-                                             lpDP->dp2->spData.dwSPHeaderSize);
+  rmsg = (LPDPSP_MSG_ENUMSESSIONSREPLY)( (LPBYTE)*lplpReplyData +
+                                         lpDP->dp2->spData.dwSPHeaderSize);
 
-  rmsg->envelope.dwMagic    = DPMSGMAGIC_DPLAYMSG;
+  rmsg->envelope.dwMagic    = DPMSG_SIGNATURE;
   rmsg->envelope.wCommandId = DPMSGCMD_ENUMSESSIONSREPLY;
-  rmsg->envelope.wVersion   = DPMSGVER_DP6;
+  rmsg->envelope.wVersion   = DX61AVERSION;
 
-  CopyMemory( &rmsg->sd, lpDP->dp2->lpSessionDesc,
+  CopyMemory( &rmsg->SessionDescription, lpDP->dp2->lpSessionDesc,
               lpDP->dp2->lpSessionDesc->dwSize );
-  rmsg->dwUnknown = 0x0000005c;
+  rmsg->NameOffset = sizeof( *rmsg );
   MultiByteToWideChar( CP_ACP, 0, lpDP->dp2->lpSessionDesc->u1.lpszSessionNameA, -1,
                        (LPWSTR)(rmsg+1), dwVariableLen );
 }

@@ -195,8 +195,8 @@ typedef struct IDirectPlayImpl
   DirectPlay2Data *dp2;
 } IDirectPlayImpl;
 
-HRESULT DP_HandleMessage( IDirectPlayImpl *This, const void *lpMessageBody,
-        DWORD  dwMessageBodySize, const void *lpMessageHeader, WORD wCommandId, WORD wVersion,
+HRESULT DP_HandleMessage( IDirectPlayImpl *This, void *lpMessageBody,
+        DWORD  dwMessageBodySize, void *lpMessageHeader, WORD wCommandId, WORD wVersion,
         void **lplpReply, DWORD *lpdwMsgSize ) DECLSPEC_HIDDEN;
 
 /* DP SP external interfaces into DirectPlay */

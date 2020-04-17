@@ -267,85 +267,92 @@ static inline DPID DP_NextObjectId(void)
 }
 
 /* *lplpReply will be non NULL iff there is something to reply */
-HRESULT DP_HandleMessage( IDirectPlayImpl *This, const void *lpcMessageBody,
-        DWORD dwMessageBodySize, const void *lpcMessageHeader, WORD wCommandId, WORD wVersion,
+HRESULT DP_HandleMessage( IDirectPlayImpl *This, void *lpMessageBody,
+        DWORD dwMessageBodySize, void *lpMessageHeader, WORD wCommandId, WORD wVersion,
         void **lplpReply, DWORD *lpdwMsgSize )
 {
-  TRACE( "(%p)->(%p,0x%08x,%p,%u,%u)\n",
-         This, lpcMessageBody, dwMessageBodySize, lpcMessageHeader, wCommandId,
+  TRACE( "(%p)->(%p,0x%08x,%p,0x%x,%u)\n",
+         This, lpMessageBody, dwMessageBodySize, lpMessageHeader, wCommandId,
          wVersion );
 
   switch( wCommandId )
   {
     /* Name server needs to handle this request */
-    case DPMSGCMD_ENUMSESSIONSREQUEST:
+    case DPMSGCMD_ENUMSESSIONS:
       /* Reply expected */
-      NS_ReplyToEnumSessionsRequest( lpcMessageBody, lplpReply, lpdwMsgSize, This );
+      NS_ReplyToEnumSessionsRequest( lpMessageBody, lplpReply, lpdwMsgSize, This );
       break;
 
     /* Name server needs to handle this request */
     case DPMSGCMD_ENUMSESSIONSREPLY:
       /* No reply expected */
-      NS_AddRemoteComputerAsNameServer( lpcMessageHeader,
+      NS_AddRemoteComputerAsNameServer( lpMessageHeader,
                                         This->dp2->spData.dwSPHeaderSize,
-                                        lpcMessageBody,
+                                        lpMessageBody,
                                         This->dp2->lpNameServerData );
       break;
 
-    case DPMSGCMD_REQUESTNEWPLAYERID:
+    case DPMSGCMD_REQUESTPLAYERID:
     {
-      LPCDPMSG_REQUESTNEWPLAYERID lpcMsg = lpcMessageBody;
-
-      LPDPMSG_NEWPLAYERIDREPLY lpReply;
+      LPDPSP_MSG_REQUESTPLAYERID lpcMsg = lpMessageBody;
+      LPDPSP_MSG_REQUESTPLAYERREPLY lpReply;
 
       *lpdwMsgSize = This->dp2->spData.dwSPHeaderSize + sizeof( *lpReply );
 
       *lplpReply = HeapAlloc( GetProcessHeap(), HEAP_ZERO_MEMORY, *lpdwMsgSize );
 
-      FIXME( "Ignoring dwFlags 0x%08x in request msg\n",
-             lpcMsg->dwFlags );
+      FIXME( "Ignoring Flags 0x%08x in request msg\n", lpcMsg->Flags );
 
       /* Setup the reply */
-      lpReply = (LPDPMSG_NEWPLAYERIDREPLY)( (BYTE*)(*lplpReply) +
-                                            This->dp2->spData.dwSPHeaderSize );
+      lpReply = (LPDPSP_MSG_REQUESTPLAYERREPLY)( (LPBYTE)(*lplpReply) +
+                                                 This->dp2->spData.dwSPHeaderSize );
 
-      lpReply->envelope.dwMagic    = DPMSGMAGIC_DPLAYMSG;
-      lpReply->envelope.wCommandId = DPMSGCMD_NEWPLAYERIDREPLY;
-      lpReply->envelope.wVersion   = DPMSGVER_DP6;
+      lpReply->envelope.dwMagic    = DPMSG_SIGNATURE;
+      lpReply->envelope.wCommandId = DPMSGCMD_REQUESTPLAYERREPLY;
+      lpReply->envelope.wVersion   = DX61AVERSION;
 
-      lpReply->dpidNewPlayerId = DP_NextObjectId();
+      lpReply->ID = DP_NextObjectId();
 
       TRACE( "Allocating new playerid 0x%08x from remote request\n",
-             lpReply->dpidNewPlayerId );
+             lpReply->ID );
       break;
     }
 
-    case DPMSGCMD_GETNAMETABLEREPLY:
-    case DPMSGCMD_NEWPLAYERIDREPLY:
-      DP_MSG_ReplyReceived( This, wCommandId, lpcMessageBody, dwMessageBodySize );
+    case DPMSGCMD_ADDFORWARD:
+    case DPMSGCMD_REQUESTPLAYERREPLY:
+      DP_MSG_ReplyReceived( This, wCommandId, lpMessageBody, dwMessageBodySize );
       break;
 
-    case DPMSGCMD_JUSTENVELOPE:
-      TRACE( "GOT THE SELF MESSAGE: %p -> 0x%08x\n", lpcMessageHeader, ((const DWORD *)lpcMessageHeader)[1] );
-      NS_SetLocalAddr( This->dp2->lpNameServerData, lpcMessageHeader, 20 );
-      DP_MSG_ReplyReceived( This, wCommandId, lpcMessageBody, dwMessageBodySize );
+    case DPMSGCMD_ADDFORWARDREQUEST:
+      /*LPCDPSP_MSG_ADDFORWARDREQUEST lpcMsg =
+        (LPCDPSP_MSG_ADDFORWARDREQUEST) lpMessageBody;*/
 
-    case DPMSGCMD_FORWARDADDPLAYER:
-      TRACE( "Sending message to self to get my addr\n" );
-      DP_MSG_ToSelf( This, 1 ); /* This is a hack right now */
+      /* TODO: Send ADDFORWARD messages to all the players to populate
+       *       their name tables.
+       *       Start NametablePopulation timer and wait for ADDFORWARDACKs */
+      FIXME( "Spread name table population messages\n" );
+
+      /* TODO remember to set local addr somewhere */
+      /*      call NS_SetLocalAddr with a SOCKADDR_IN */
+
       break;
 
-    case DPMSGCMD_FORWARDADDPLAYERNACK:
-      DP_MSG_ErrorReceived( This, wCommandId, lpcMessageBody, dwMessageBodySize );
+    case DPMSGCMD_SUPERENUMPLAYERSREPLY:
+      DP_MSG_ReplyReceived( This, wCommandId, lpMessageBody, dwMessageBodySize );
+      break;
+
+    case DPMSGCMD_ADDFORWARDACK:
+      /* When we receive an ADDFORWARDACK for each of the ADDFORWARDs
+       * we've sent, send a SUPERENUMPLAYERSREPLY back to the peer
+       * that sent the ADDFORWARDREQUEST */
+      /* TODO: We'll skip this for now and just send the SUPERENUMPLAYERSREPLY
+       *       right away when we get a ADDFORWARDREQUEST */
       break;
 
     default:
-      FIXME( "Unknown wCommandId %u. Ignoring message\n", wCommandId );
-      DebugBreak();
-      break;
+      FIXME( "Unknown wCommandId 0x%08x. Ignoring message\n", wCommandId );
+      return DPERR_GENERIC;
   }
-
-  /* FIXME: There is code in dplaysp.c to handle dplay commands. Move to here. */
 
   return DP_OK;
 }
@@ -1690,10 +1697,6 @@ static HRESULT DP_IF_CreatePlayer( IDirectPlayImpl *This, void *lpMsgHdr, DPID *
      *        is this used for regular players? If only for server players, move
      *        this call to DP_SecureOpen(...);
      */
-#if 0
-    TRACE( "Sending message to self to get my addr\n" );
-    DP_MSG_ToSelf( This, *lpidPlayer ); /* This is a hack right now */
-#endif
 
     hr = DP_MSG_ForwardPlayerCreation( This, *lpidPlayer);
   }
