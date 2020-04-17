@@ -3099,6 +3099,7 @@ static HRESULT WINAPI IDirectPlay4Impl_GetPlayerCaps( IDirectPlay4 *iface, DPID 
 {
     IDirectPlayImpl *This = impl_from_IDirectPlay4( iface );
     DPSP_GETCAPSDATA data;
+    HRESULT hr;
 
     TRACE( "(%p)->(0x%08x,%p,0x%08x)\n", This, player, caps, flags);
 
@@ -3117,7 +3118,12 @@ static HRESULT WINAPI IDirectPlay4Impl_GetPlayerCaps( IDirectPlay4 *iface, DPID 
     data.lpCaps = caps;
     data.lpISP = This->dp2->spData.lpISP;
 
-    return (*This->dp2->spData.lpCB->GetCaps)( &data );
+    hr = (*This->dp2->spData.lpCB->GetCaps)( &data );
+
+    /* Substract size of DirectPlay header */
+    data.lpCaps->dwMaxBufferSize -= sizeof(DPSP_MSG_ENVELOPE);
+
+    return hr;
 }
 
 static HRESULT WINAPI IDirectPlay2AImpl_GetPlayerData( IDirectPlay2A *iface, DPID player,
