@@ -38,6 +38,11 @@ HRESULT DP_MSG_SendCreatePlayer( IDirectPlayImpl* This, lpPlayerData lpData ) DE
 HRESULT DP_MSG_ForwardPlayerCreation( IDirectPlayImpl *This, DPID dpidServer ) DECLSPEC_HIDDEN;
 void DP_MSG_ReplyToEnumPlayersRequest( IDirectPlayImpl* lpDP, LPVOID* lplpReply,
                                        LPDWORD lpdwMsgSize ) DECLSPEC_HIDDEN;
+DWORD DP_MSG_ParsePackedPlayer( IDirectPlayImpl* lpDP,
+                                LPBYTE lpPackedPlayer,
+                                LPPACKEDPLAYERDATA lpData,
+                                BOOL bIsGroup,
+                                BOOL bAnsi );
 
 BOOL DP_MSG_ReplyReceived( IDirectPlayImpl *This, WORD wCommandId,
                            LPCVOID lpMsgHdr, LPCVOID lpMsgBody,
