@@ -1099,14 +1099,13 @@ static void test_GetCaps(void)
          dwFlags<=DPGETCAPS_GUARANTEED;
          dwFlags+=DPGETCAPS_GUARANTEED)
     {
-
         hr = IDirectPlayX_GetCaps( pDP, &dpcaps, dwFlags );
         checkHR( DP_OK, hr );
         check( sizeof(DPCAPS), dpcaps.dwSize );
-        check( DPCAPS_ASYNCSUPPORTED |
-               DPCAPS_GUARANTEEDOPTIMIZED |
-               DPCAPS_GUARANTEEDSUPPORTED,
-               dpcaps.dwFlags );
+        checkFlags( DPCAPS_ASYNCSUPPORTED |
+                  DPCAPS_GUARANTEEDOPTIMIZED |
+                  DPCAPS_GUARANTEEDSUPPORTED,
+                  dpcaps.dwFlags, FLAGS_DPCAPS );
         check( 0,     dpcaps.dwMaxQueueSize );
         check( 0,     dpcaps.dwHundredBaud );
         check( 500,   dpcaps.dwLatency );
@@ -1124,7 +1123,8 @@ static void test_GetCaps(void)
             check( 1048547, dpcaps.dwMaxBufferSize );
             check( 64,      dpcaps.dwMaxPlayers );
             break;
-        default: break;
+        default:
+            break;
         }
     }
 
@@ -1245,12 +1245,15 @@ static void test_Open(void)
 
     /* Service provider not initialized */
     hr = IDirectPlayX_Open( pDP_server, &dpsd_server, DPOPEN_CREATE );
-    todo_wine checkHR( DPERR_INVALIDPARAMS, hr );
+    checkHR( DPERR_INVALIDPARAMS, hr );
 
     init_TCPIP_provider( pDP_server, "127.0.0.1", 0 );
     init_TCPIP_provider( pDP, "127.0.0.1", 0 );
 
     /* Uninitialized  dpsd */
+    hr = IDirectPlayX_Open( pDP_server, NULL, DPOPEN_CREATE );
+    checkHR( DPERR_INVALIDPARAMS, hr );
+
     hr = IDirectPlayX_Open( pDP_server, &dpsd_server, DPOPEN_CREATE );
     checkHR( DPERR_INVALIDPARAMS, hr );
 
@@ -1262,26 +1265,27 @@ static void test_Open(void)
 
     /* Regular operation */
     hr = IDirectPlayX_Open( pDP_server, &dpsd_server, DPOPEN_CREATE );
-    todo_wine checkHR( DP_OK, hr );
+    checkHR( DP_OK, hr );
+
 
     /* Opening twice */
     hr = IDirectPlayX_Open( pDP_server, &dpsd_server, DPOPEN_CREATE );
-    todo_wine checkHR( DPERR_ALREADYINITIALIZED, hr );
+    checkHR( DPERR_ALREADYINITIALIZED, hr );
 
     /* Session flags */
     IDirectPlayX_Close( pDP_server );
 
     dpsd_server.dwFlags = DPSESSION_CLIENTSERVER | DPSESSION_MIGRATEHOST;
     hr = IDirectPlayX_Open( pDP_server, &dpsd_server, DPOPEN_CREATE );
-    todo_wine checkHR( DPERR_INVALIDFLAGS, hr );
+    checkHR( DPERR_INVALIDFLAGS, hr );
 
     dpsd_server.dwFlags = DPSESSION_MULTICASTSERVER | DPSESSION_MIGRATEHOST;
     hr = IDirectPlayX_Open( pDP_server, &dpsd_server, DPOPEN_CREATE );
-    todo_wine checkHR( DPERR_INVALIDFLAGS, hr );
+    checkHR( DPERR_INVALIDFLAGS, hr );
 
     dpsd_server.dwFlags = DPSESSION_SECURESERVER | DPSESSION_MIGRATEHOST;
     hr = IDirectPlayX_Open( pDP_server, &dpsd_server, DPOPEN_CREATE );
-    todo_wine checkHR( DPERR_INVALIDFLAGS, hr );
+    checkHR( DPERR_INVALIDFLAGS, hr );
 
 
     /* Joining sessions */
@@ -1300,7 +1304,7 @@ static void test_Open(void)
 
     dpsd.dwSize = sizeof(DPSESSIONDESC2);
     hr = IDirectPlayX_Open( pDP, &dpsd, DPOPEN_JOIN );
-    todo_wine checkHR( DPERR_NOSESSIONS, hr ); /* Only checks for size, not guids */
+    checkHR( DPERR_NOSESSIONS, hr ); /* Only checks for size, not guids */
 
 
     dpsd.guidApplication = appGuid;
@@ -1308,23 +1312,23 @@ static void test_Open(void)
 
 
     hr = IDirectPlayX_Open( pDP, &dpsd, DPOPEN_JOIN );
-    todo_wine checkHR( DPERR_NOSESSIONS, hr );
+    checkHR( DPERR_NOSESSIONS, hr );
     hr = IDirectPlayX_Open( pDP, &dpsd, DPOPEN_JOIN | DPOPEN_CREATE );
-    todo_wine checkHR( DPERR_NOSESSIONS, hr ); /* Second flag is ignored */
+    checkHR( DPERR_NOSESSIONS, hr ); /* Second flag is ignored */
 
     dpsd_server.dwFlags = 0;
 
 
     /* Join to normal session */
     hr = IDirectPlayX_Open( pDP_server, &dpsd_server, DPOPEN_CREATE );
-    todo_wine checkHR( DP_OK, hr );
+    checkHR( DP_OK, hr );
 
     IDirectPlayX_EnumSessions( pDP, &dpsd, 0, EnumSessions_cb2, pDP, 0 );
 
 
     /* Already initialized session */
     hr = IDirectPlayX_Open( pDP_server, &dpsd_server, DPOPEN_CREATE );
-    todo_wine checkHR( DPERR_ALREADYINITIALIZED, hr );
+    checkHR( DPERR_ALREADYINITIALIZED, hr );
 
 
     /* Checking which is the error checking order */
@@ -1340,7 +1344,7 @@ static void test_Open(void)
     IDirectPlayX_Close( pDP_server );
     U2(dpsd_server).lpszPasswordA = (LPSTR) "hadouken";
     hr = IDirectPlayX_Open( pDP_server, &dpsd_server, DPOPEN_CREATE );
-    todo_wine checkHR( DP_OK, hr );
+    checkHR( DP_OK, hr );
 
     IDirectPlayX_EnumSessions( pDP, &dpsd, 0, EnumSessions_cb2,
                                pDP, DPENUMSESSIONS_PASSWORDREQUIRED );
@@ -1403,6 +1407,12 @@ static IDirectPlay4 *create_session(DPSESSIONDESC2 *lpdpsd)
     hr = IDirectPlayX_Open( pDP, lpdpsd, DPOPEN_CREATE );
     todo_wine checkHR( DP_OK, hr );
 
+    if ( hr != DP_OK )
+    {
+        todo_wine win_skip("Open not implemented\n");
+        return NULL;
+    }
+
     if ( ! (lpdpsd->dwFlags & DPSESSION_NEWPLAYERSDISABLED) )
     {
         ZeroMemory( &name, sizeof(DPNAME) );
@@ -1411,7 +1421,7 @@ static IDirectPlay4 *create_session(DPSESSIONDESC2 *lpdpsd)
 
         hr = IDirectPlayX_CreatePlayer( pDP, &dpid, &name, NULL, NULL,
                                         0, DPPLAYER_SERVERPLAYER );
-        todo_wine checkHR( DP_OK, hr );
+        checkHR( DP_OK, hr );
     }
 
     return pDP;
@@ -1453,13 +1463,7 @@ static void test_EnumSessions(void)
     /* Session with no size */
     hr = IDirectPlayX_EnumSessions( pDP, &dpsd, 0, EnumSessions_cb,
                                     &callbackData, 0 );
-    todo_wine checkHR( DPERR_INVALIDPARAMS, hr );
-
-    if ( hr == DPERR_UNINITIALIZED )
-    {
-        todo_wine win_skip( "EnumSessions not implemented\n" );
-        return;
-    }
+    checkHR( DPERR_INVALIDPARAMS, hr );
 
     dpsd.dwSize = sizeof(DPSESSIONDESC2);
 
@@ -1468,8 +1472,14 @@ static void test_EnumSessions(void)
     callbackData.dwCounter1 = -1;
     hr = IDirectPlayX_EnumSessions( pDP, &dpsd, 0, EnumSessions_cb,
                                     &callbackData, 0 );
-    checkHR( DP_OK, hr );
+    todo_wine checkHR( DP_OK, hr );
     check( 0, callbackData.dwCounter1 );
+
+    if ( hr != DP_OK )
+    {
+        todo_wine win_skip( "EnumSessions not implemented\n" );
+        return;
+    }
 
 
     dpsd.guidApplication = appGuid;
@@ -1520,20 +1530,19 @@ static void test_EnumSessions(void)
     for (i=0; i<N_SESSIONS; i++)
     {
         pDPserver[i] = create_session( &dpsd_server[i] );
-        if (!pDPserver[i]) return;
+        if (!pDPserver[i])
+        {
+            todo_wine win_skip( "EnumSessions not implemented\n");
+            return;
+        }
     }
 
 
     /* Invalid params */
     callbackData.dwCounter1 = -1;
-    hr = IDirectPlayX_EnumSessions( pDP, &dpsd, 0, EnumSessions_cb,
-                                    &callbackData, -1 );
-    checkHR( DPERR_INVALIDPARAMS, hr );
-
     hr = IDirectPlayX_EnumSessions( pDP, NULL, 0, EnumSessions_cb,
                                     &callbackData, 0 );
     checkHR( DPERR_INVALIDPARAMS, hr );
-
     check( -1, callbackData.dwCounter1 );
 
 
@@ -1827,13 +1836,7 @@ static void test_SessionDesc(void)
 
     /* No sessions open */
     hr = IDirectPlayX_SetSessionDesc( pDP[0], NULL, 0 );
-    todo_wine checkHR( DPERR_NOSESSIONS, hr );
-
-    if ( hr == DPERR_UNINITIALIZED )
-    {
-        todo_wine win_skip("Get/SetSessionDesc not implemented\n");
-        return;
-    }
+    checkHR( DPERR_NOSESSIONS, hr );
 
     hr = IDirectPlayX_GetSessionDesc( pDP[0], NULL, NULL );
     checkHR( DPERR_NOSESSIONS, hr );
@@ -1845,10 +1848,18 @@ static void test_SessionDesc(void)
 
 
     /* Host */
-    IDirectPlayX_Open( pDP[0], &dpsd, DPOPEN_CREATE );
+    hr = IDirectPlayX_Open( pDP[0], &dpsd, DPOPEN_CREATE );
+    checkHR( DP_OK, hr );
     /* Peer */
-    IDirectPlayX_EnumSessions( pDP[1], &dpsd, 0, EnumSessions_cb_join,
-                               pDP[1], 0 );
+    hr = IDirectPlayX_EnumSessions( pDP[1], &dpsd, 0, EnumSessions_cb_join,
+                                    pDP[1], 0 );
+    todo_wine checkHR( DP_OK, hr );
+
+    if ( hr != DP_OK )
+    {
+        skip( "Get/SetSessionDesc not implemented\n" );
+        return;
+    }
 
     for (i=0; i<2; i++)
     {
@@ -2005,19 +2016,19 @@ static void test_CreatePlayer(void)
     init_TCPIP_provider( pDP[1], "127.0.0.1", 0 );
 
 
-    /* Session not open */
+    /* Invalid session */
     hr = IDirectPlayX_CreatePlayer( pDP[0], &dpid, NULL, NULL, NULL, 0, 0 );
-    todo_wine checkHR( DPERR_INVALIDPARAMS, hr );
-
-    if ( hr == DPERR_UNINITIALIZED )
-    {
-        todo_wine win_skip( "CreatePlayer not implemented\n" );
-        return;
-    }
+    checkHR( DPERR_INVALIDPARAMS, hr );
 
     dpsd.dwSize = sizeof(DPSESSIONDESC2);
     dpsd.guidApplication = appGuid;
-    IDirectPlayX_Open( pDP[0], &dpsd, DPOPEN_CREATE );
+
+    /* Session not open */
+    hr = IDirectPlayX_CreatePlayer( pDP[0], &dpid, NULL, NULL, NULL, 0, 0 );
+    checkHR( DPERR_INVALIDPARAMS, hr );
+
+    hr = IDirectPlayX_Open( pDP[0], &dpsd, DPOPEN_CREATE );
+    checkHR( DP_OK, hr );
 
 
     /* Player name */
@@ -2117,7 +2128,13 @@ static void test_CreatePlayer(void)
     checkHR( DP_OK, hr );
     hr = IDirectPlayX_EnumSessions( pDP[1], &dpsd, 0, EnumSessions_cb_join,
                                     pDP[1], 0 );
-    checkHR( DP_OK, hr );
+    todo_wine checkHR( DP_OK, hr );
+
+    if ( hr !=DP_OK )
+    {
+        skip( "CreatePlayer not implemented\n" );
+        return;
+    }
 
 
     hr = IDirectPlayX_CreatePlayer( pDP[0], &dpid, NULL, NULL, NULL,
@@ -2191,18 +2208,18 @@ static void test_GetPlayerCaps(void)
     playerCaps.dwSize = 0;
 
     hr = IDirectPlayX_GetPlayerCaps( pDP[0], 0, &playerCaps, 0 );
-    todo_wine checkHR( DPERR_INVALIDPARAMS, hr );
-
-    if ( hr == DPERR_UNINITIALIZED )
-    {
-        todo_wine win_skip( "GetPlayerCaps not implemented\n" );
-        return;
-    }
+    checkHR( DPERR_INVALIDPARAMS, hr );
 
     playerCaps.dwSize = sizeof(DPCAPS);
 
     hr = IDirectPlayX_GetPlayerCaps( pDP[0], 0, &playerCaps, 0 );
-    checkHR( DPERR_INVALIDPLAYER, hr );
+    todo_wine checkHR( DPERR_INVALIDPLAYER, hr );
+
+    if ( hr != DPERR_INVALIDPLAYER )
+    {
+        todo_wine win_skip( "GetPlayerCaps not implemented\n" );
+        return;
+    }
 
     hr = IDirectPlayX_GetPlayerCaps( pDP[0], 2, &playerCaps, 0 );
     checkHR( DPERR_INVALIDPLAYER, hr );
@@ -2356,22 +2373,19 @@ static void test_PlayerData(void)
     /* Invalid player */
     hr = IDirectPlayX_SetPlayerData( pDP, 0, (LPVOID) lpData,
                                      dwDataSize, 0 );
-    todo_wine checkHR( DPERR_INVALIDPLAYER, hr );
+    checkHR( DPERR_INVALIDPLAYER, hr );
 
-    hr = IDirectPlayX_GetPlayerData( pDP, 0, lpDataGet, &dwDataSizeGet, 0 );
-    todo_wine checkHR( DPERR_INVALIDPLAYER, hr );
+    hr = IDirectPlayX_GetPlayerData( pDP, 0, lpDataGet,
+                                     &dwDataSizeGet, 0 );
+    checkHR( DPERR_INVALIDPLAYER, hr );
 
-    if ( hr == DPERR_UNINITIALIZED )
-    {
-        todo_wine win_skip( "Get/SetPlayerData not implemented\n" );
-        return;
-    }
 
     /* Create the player */
     /* By default, the data is remote */
     hr = IDirectPlayX_CreatePlayer( pDP, &dpid, NULL, NULL, (LPVOID) lpData,
                                     dwDataSize, 0 );
     checkHR( DP_OK, hr );
+
 
     /* Invalid parameters */
     hr = IDirectPlayX_SetPlayerData( pDP, dpid, NULL, dwDataSize, 0 );
@@ -2414,8 +2428,14 @@ static void test_PlayerData(void)
     strcpy(lpDataGet, lpDataFake);
     hr = IDirectPlayX_GetPlayerData( pDP, dpid, lpDataGet, &dwDataSizeGet, 0 );
     checkHR( DP_OK, hr );
-    check( dwDataSize, dwDataSizeGet );
+    todo_wine check( dwDataSize, dwDataSizeGet );
     checkStr( lpData, lpDataGet );
+
+    if ( dwDataSize != dwDataSizeGet )
+    {
+        skip( "GetPlayerData not implemented\n" );
+        return;
+    }
 
     /* Flag tests */
     dwDataSizeGet = dwDataSizeFake;
@@ -2618,7 +2638,7 @@ static void test_PlayerName(void)
     hr = IDirectPlayX_SetPlayerName( pDP[0], 0, &playerName, 0 );
     todo_wine checkHR( DPERR_INVALIDPLAYER, hr );
 
-    if ( hr == DPERR_UNINITIALIZED )
+    if ( hr != DPERR_INVALIDPLAYER )
     {
         todo_wine win_skip( "Get/SetPlayerName not implemented\n" );
         return;
@@ -3335,28 +3355,22 @@ static void test_CreateGroup(void)
     /* No session */
     hr = IDirectPlayX_CreateGroup( pDP, &idGroup,
                                    NULL, NULL, 0, 0 );
-    todo_wine checkHR( DPERR_INVALIDPARAMS, hr );
+    checkHR( DPERR_INVALIDPARAMS, hr );
 
-    if ( hr == DPERR_UNINITIALIZED )
-    {
-        todo_wine win_skip( "CreateGroup not implemented\n" );
-        return;
-    }
 
     hr = IDirectPlayX_CreateGroupInGroup( pDP, 0, &idGroup,
                                           NULL, NULL, 0, 0 );
-    checkHR( DPERR_INVALIDGROUP, hr );
+    todo_wine checkHR( DPERR_INVALIDGROUP, hr );
 
     hr = IDirectPlayX_CreateGroupInGroup( pDP, 2, &idGroup,
                                           NULL, NULL, 0, 0 );
-    checkHR( DPERR_INVALIDGROUP, hr );
+    todo_wine checkHR( DPERR_INVALIDGROUP, hr );
 
 
     hr = IDirectPlayX_Open( pDP, &dpsd, DPOPEN_CREATE );
     checkHR( DP_OK, hr );
     IDirectPlayX_CreatePlayer( pDP, &dpid,
                                NULL, NULL, NULL, 0, 0 );
-
 
 
     /* With name */
@@ -3396,7 +3410,10 @@ static void test_CreateGroup(void)
         dwDataSizeGet = 1024;
         hr = IDirectPlayX_Receive( pDP, &idFrom, &idTo, 0, lpDataGet,
                                    &dwDataSizeGet );
-        checkHR( DP_OK, hr );
+        todo_wine checkHR( DP_OK, hr );
+        if ( hr != DP_OK )
+            continue;
+
         if ( NULL == U1(lpDataGet->dpnName).lpszShortNameA )
         {
             check( 48, dwDataSizeGet );
@@ -3429,6 +3446,10 @@ static void test_CreateGroup(void)
     checkHR( DPERR_INVALIDPARAMS, hr );
 
     hr = IDirectPlayX_CreateGroup( pDP, &idGroup,
+                                   NULL, NULL, 0, 0 );
+    checkHR( DP_OK, hr );
+
+    hr = IDirectPlayX_CreateGroup( pDP, &idGroup,
                                    NULL, (LPVOID) lpData, dwDataSize, 0 );
     checkHR( DP_OK, hr );
 
@@ -3446,8 +3467,12 @@ static void test_CreateGroup(void)
     checkHR( DPERR_INVALIDPARAMS, hr );
 
     hr = IDirectPlayX_CreateGroupInGroup( pDP, idGroup, &idGroup,
+                                          NULL, NULL, 0, 0 );
+    todo_wine checkHR( DP_OK, hr );
+
+    hr = IDirectPlayX_CreateGroupInGroup( pDP, idGroup, &idGroup,
                                           NULL, (LPVOID)lpData, dwDataSize, 0 );
-    checkHR( DP_OK, hr );
+    todo_wine checkHR( DP_OK, hr );
 
 
     hr = IDirectPlayX_CreateGroup( pDP, &idGroupParent,
@@ -3456,12 +3481,15 @@ static void test_CreateGroup(void)
 
 
     /* Message checking */
-    for (i=0; i<5; i++)
+    for (i=0; i<7; i++)
     {
         dwDataSizeGet = 1024;
         hr = IDirectPlayX_Receive( pDP, &idFrom, &idTo, 0, lpDataGet,
                                    &dwDataSizeGet );
-        checkHR( DP_OK, hr );
+        todo_wine checkHR( DP_OK, hr );
+        if ( hr != DP_OK )
+            continue;
+
         check( 48 + lpDataGet->dwDataSize, dwDataSizeGet );
         check( DPID_SYSMSG, idFrom );
         checkConv( DPSYS_CREATEPLAYERORGROUP, lpDataGet->dwType, dpMsgType2str );
@@ -3516,7 +3544,10 @@ static void test_CreateGroup(void)
         dwDataSizeGet = 1024;
         hr = IDirectPlayX_Receive( pDP, &idFrom, &idTo, 0, lpDataGet,
                                    &dwDataSizeGet );
-        checkHR( DP_OK, hr );
+        todo_wine checkHR( DP_OK, hr );
+        if ( hr != DP_OK )
+            continue;
+
         check( 48, dwDataSizeGet );
         check( DPID_SYSMSG, idFrom );
         checkConv( DPSYS_CREATEPLAYERORGROUP, lpDataGet->dwType, dpMsgType2str );
@@ -3568,7 +3599,7 @@ static void test_CreateGroup(void)
 
     /* Messages are received */
     check_messages( pDP, &dpid, 1, &callbackData );
-    checkStr( "S0,", callbackData.szTrace1 );
+    todo_wine checkStr( "S0,", callbackData.szTrace1 );
 
 
     /* - Client/Server */
@@ -3588,7 +3619,7 @@ static void test_CreateGroup(void)
 
     /* No messages */
     check_messages( pDP, &dpid, 1, &callbackData );
-    checkStr( "S0,", callbackData.szTrace1 ); /* Or at least there
+    todo_wine checkStr( "S0,", callbackData.szTrace1 ); /* Or at least there
                                                  shouldn't be messages... */
 
 
@@ -3814,14 +3845,9 @@ static void test_EnumPlayers(void)
     callbackData.dwCounter1 = 0;
     hr = IDirectPlayX_EnumPlayers( pDP[0], NULL, EnumPlayers_cb,
                                    &callbackData, 0 );
-    todo_wine checkHR( DPERR_NOSESSIONS, hr );
+    checkHR( DPERR_NOSESSIONS, hr );
     check( 0, callbackData.dwCounter1 );
 
-    if ( hr == DPERR_UNINITIALIZED )
-    {
-        todo_wine win_skip( "EnumPlayers not implemented\n" );
-        return;
-    }
 
     callbackData.dwCounter1 = 0;
     hr = IDirectPlayX_EnumPlayers( pDP[0], (LPGUID) &appGuid, EnumPlayers_cb,
@@ -3889,9 +3915,15 @@ static void test_EnumPlayers(void)
     hr = IDirectPlayX_EnumPlayers( pDP[0], NULL, EnumPlayers_cb,
                                    &callbackData, 0 );
     checkHR( DP_OK, hr );
-    check( 2, callbackData.dwCounter1 );
-    checkStr( "20", callbackData.szTrace1 );
-    checkStr( "ALL:SERVERPLAYER:", callbackData.szTrace2 );
+    todo_wine check( 2, callbackData.dwCounter1 );
+    todo_wine checkStr( "20", callbackData.szTrace1 );
+    todo_wine checkStr( "ALL:SERVERPLAYER:", callbackData.szTrace2 );
+
+    if ( 2 != callbackData.dwCounter1 )
+    {
+        skip( "EnumPlayers not implemented\n" );
+        return;
+    }
 
     callbackData.dwCounter1 = 0;
     callbackData.szTrace2[0] = 0;
@@ -4137,14 +4169,9 @@ static void test_EnumGroups(void)
     callbackData.dwCounter1 = 0;
     hr = IDirectPlayX_EnumGroups( pDP[0], NULL, EnumGroups_cb,
                                   &callbackData, 0 );
-    todo_wine checkHR( DPERR_NOSESSIONS, hr );
+    checkHR( DPERR_NOSESSIONS, hr );
     check( 0, callbackData.dwCounter1 );
 
-    if ( hr == DPERR_UNINITIALIZED )
-    {
-        todo_wine win_skip( "EnumGroups not implemented\n" );
-        return;
-    }
 
     callbackData.dwCounter1 = 0;
     hr = IDirectPlayX_EnumGroups( pDP[0], (LPGUID) &appGuid, EnumGroups_cb,
@@ -4211,7 +4238,8 @@ static void test_EnumGroups(void)
     checkHR( DP_OK, hr );
     check( 2, callbackData.dwCounter1 );
     checkStr( "02", callbackData.szTrace1 );
-    checkStr( "ALL:HIDDEN:", callbackData.szTrace2 );
+    todo_wine checkStr( "ALL:HIDDEN:", callbackData.szTrace2 );
+
 
     callbackData.dwCounter1 = 0;
     callbackData.szTrace2[0] = 0;
@@ -4229,7 +4257,7 @@ static void test_EnumGroups(void)
     checkHR( DP_OK, hr );
     check( 2, callbackData.dwCounter1 ); /* Guid is ignored */
     checkStr( "02", callbackData.szTrace1 );
-    checkStr( "ALL:HIDDEN:", callbackData.szTrace2 );
+    todo_wine checkStr( "ALL:HIDDEN:", callbackData.szTrace2 );
 
 
     /* Enumerating from a remote session */
@@ -4238,7 +4266,13 @@ static void test_EnumGroups(void)
     hr = IDirectPlayX_EnumSessions( pDP[2], &dpsd[2], 0,
                                     EnumSessions_cb_EnumGroups,
                                     &callbackData, 0 );
-    checkHR( DP_OK, hr );
+    todo_wine checkHR( DP_OK, hr );
+
+    if ( hr != DP_OK )
+    {
+        skip( "not ready yet\n" );
+        return;
+    }
 
     /* - Open session */
     callbackData.pDP = pDP[2];
@@ -4261,7 +4295,7 @@ static void test_EnumGroups(void)
     checkHR( DP_OK, hr );
     check( 4, callbackData.dwCounter1 );
     checkStr( "0234", callbackData.szTrace1 );
-    checkStr( "ALL:HIDDEN:ALL:STAGINGAREA:", callbackData.szTrace2 );
+    todo_wine checkStr( "ALL:HIDDEN:ALL:STAGINGAREA:", callbackData.szTrace2 );
 
     /* Flag tests */
     callbackData.dwCounter1 = 0;
@@ -4271,7 +4305,7 @@ static void test_EnumGroups(void)
     checkHR( DP_OK, hr );
     check( 4, callbackData.dwCounter1 );
     checkStr( "0234", callbackData.szTrace1 );
-    checkStr( "ALL:HIDDEN:ALL:STAGINGAREA:", callbackData.szTrace2 );
+    todo_wine checkStr( "ALL:HIDDEN:ALL:STAGINGAREA:", callbackData.szTrace2 );
 
     callbackData.dwCounter1 = 0;
     callbackData.szTrace2[0] = 0;
@@ -4280,7 +4314,7 @@ static void test_EnumGroups(void)
     checkHR( DP_OK, hr );
     check( 1, callbackData.dwCounter1 );
     checkStr( "2", callbackData.szTrace1 );
-    checkStr( "HIDDEN:", callbackData.szTrace2 );
+    todo_wine checkStr( "HIDDEN:", callbackData.szTrace2 );
 
     callbackData.dwCounter1 = 0;
     callbackData.szTrace2[0] = 0;
@@ -4289,7 +4323,7 @@ static void test_EnumGroups(void)
     checkHR( DP_OK, hr );
     check( 2, callbackData.dwCounter1 );
     checkStr( "34", callbackData.szTrace1 );
-    checkStr( "LOCAL:"
+    todo_wine checkStr( "LOCAL:"
               "LOCAL,DPENUMGROUPS_STAGINGAREA:", callbackData.szTrace2 );
 
     callbackData.dwCounter1 = 0;
@@ -4299,7 +4333,7 @@ static void test_EnumGroups(void)
     checkHR( DP_OK, hr );
     check( 2, callbackData.dwCounter1 );
     checkStr( "02", callbackData.szTrace1 );
-    checkStr( "REMOTE:"
+    todo_wine checkStr( "REMOTE:"
               "REMOTE,DPENUMGROUPS_HIDDEN:", callbackData.szTrace2 );
 
     callbackData.dwCounter1 = 0;
@@ -4309,7 +4343,7 @@ static void test_EnumGroups(void)
     checkHR( DP_OK, hr );
     check( 1, callbackData.dwCounter1 );
     checkStr( "4", callbackData.szTrace1 );
-    checkStr( "STAGINGAREA:", callbackData.szTrace2 );
+    todo_wine checkStr( "STAGINGAREA:", callbackData.szTrace2 );
 
 
     IDirectPlayX_Release( pDP[0] );
@@ -4358,13 +4392,8 @@ static void test_EnumGroupsInGroup(void)
     init_TCPIP_provider( pDP[1], "127.0.0.1", 0 );
 
     hr = IDirectPlayX_Open( pDP[0], &dpsd[0], DPOPEN_CREATE );
-    todo_wine checkHR( DP_OK, hr );
+    checkHR( DP_OK, hr );
 
-    if ( hr == DPERR_UNINITIALIZED )
-    {
-        todo_wine win_skip( "EnumGroupsInGroup not implemented\n" );
-        return;
-    }
 
     /* Create groups */
     /*
@@ -4403,8 +4432,14 @@ static void test_EnumGroupsInGroup(void)
     callbackData.dwCounter1 = 0;
     hr = IDirectPlayX_EnumGroupsInGroup( pDP[0], 0, NULL, EnumGroups_cb,
                                          &callbackData, 0 );
-    checkHR( DPERR_INVALIDGROUP, hr );
-    check( 0, callbackData.dwCounter1 );
+    todo_wine checkHR( DPERR_INVALIDGROUP, hr );
+    todo_wine check( 0, callbackData.dwCounter1 );
+
+    if ( hr != DPERR_INVALIDGROUP )
+    {
+        skip( "EnumGroupsInGroup not implemented\n" );
+        return;
+    }
 
     callbackData.dwCounter1 = 0;
     hr = IDirectPlayX_EnumGroupsInGroup( pDP[0], 10, NULL, EnumGroups_cb,
@@ -4583,12 +4618,12 @@ static void test_groups_p2p(void)
     init_TCPIP_provider( pDP[1], "127.0.0.1", 0 );
 
     hr = IDirectPlayX_Open( pDP[0], &dpsd, DPOPEN_CREATE );
-    todo_wine checkHR( DP_OK, hr );
+    checkHR( DP_OK, hr );
     hr = IDirectPlayX_EnumSessions( pDP[1], &dpsd, 0, EnumSessions_cb_join,
                                     pDP[1], 0 );
     todo_wine checkHR( DP_OK, hr );
 
-    if ( hr == DPERR_UNINITIALIZED )
+    if ( hr != DP_OK )
     {
         todo_wine win_skip( "dplay not implemented enough for this test yet\n" );
         return;
@@ -4819,13 +4854,13 @@ static void test_groups_cs(void)
 
     dpsd.dwFlags = DPSESSION_CLIENTSERVER;
     hr = IDirectPlayX_Open( pDP[0], &dpsd, DPOPEN_CREATE );
-    todo_wine checkHR( DP_OK, hr );
+    checkHR( DP_OK, hr );
     dpsd.dwFlags = 0;
     hr = IDirectPlayX_EnumSessions( pDP[1], &dpsd, 0, EnumSessions_cb_join,
                                     pDP[1], 0 );
     todo_wine checkHR( DP_OK, hr );
 
-    if ( hr == DPERR_UNINITIALIZED )
+    if ( hr != DP_OK )
     {
         todo_wine win_skip( "dplay not implemented enough for this test yet\n" );
         return;
@@ -5071,19 +5106,19 @@ static void test_Send(void)
     /* Incorrect players */
     hr = IDirectPlayX_Send( pDP[0], 0, 1, 2,
                             (LPVOID) message, messageSize );
-    todo_wine checkHR( DPERR_INVALIDPLAYER, hr );
-
-    if ( hr == DPERR_UNINITIALIZED )
-    {
-        todo_wine win_skip( "Send not implemented\n" );
-        return;
-    }
+    checkHR( DPERR_INVALIDPLAYER, hr );
 
 
     IDirectPlayX_CreatePlayer( pDP[0], &dpid[0], NULL, NULL, NULL, 0, 0 );
     IDirectPlayX_CreatePlayer( pDP[0], &dpid[1], NULL, NULL, NULL, 0, 0 );
     IDirectPlayX_CreatePlayer( pDP[0], &dpid[2], NULL, NULL, NULL, 0, 0 );
-    IDirectPlayX_CreatePlayer( pDP[1], &dpid[3], NULL, NULL, NULL, 0, 0 );
+    hr = IDirectPlayX_CreatePlayer( pDP[1], &dpid[3], NULL, NULL, NULL, 0, 0 );
+
+    if ( hr != DP_OK )
+    {
+        todo_wine win_skip( "Send not implemented\n" );
+        return;
+    }
 
     /* Purge player creation messages */
     check_messages( pDP[0], dpid, 4, &callbackData );
@@ -5397,7 +5432,7 @@ static void test_Receive(void)
                                lpData, &dwDataSize );
     todo_wine checkHR( DPERR_INVALIDPARAMS, hr );
 
-    if ( hr == DPERR_UNINITIALIZED )
+    if ( hr != DPERR_INVALIDPARAMS )
     {
         todo_wine win_skip( "Receive not implemented\n" );
         return;
@@ -5413,6 +5448,7 @@ static void test_Receive(void)
     hr = IDirectPlayX_Receive( pDP, &idFrom, &idTo, 0,
                                lpData, &dwDataSize );
     checkHR( DPERR_INVALIDPARAMS, hr );
+
 
     /* No messages yet */
     hr = IDirectPlayX_Receive( pDP, &idFrom, &idTo, 0,
@@ -6220,13 +6256,8 @@ static void test_remote_data_replication(void)
 
     /* Host */
     hr = IDirectPlayX_Open( pDP[0], &dpsd, DPOPEN_CREATE );
-    todo_wine checkHR( DP_OK, hr );
+    checkHR( DP_OK, hr );
 
-    if ( hr == DPERR_UNINITIALIZED )
-    {
-        todo_wine win_skip( "dplay not implemented enough for this test yet\n" );
-        return;
-    }
 
     hr = IDirectPlayX_CreatePlayer( pDP[0], &dpid[0],
                                     NULL, NULL, NULL, 0, 0 );
@@ -6235,7 +6266,13 @@ static void test_remote_data_replication(void)
     /* Peer */
     hr = IDirectPlayX_EnumSessions( pDP[1], &dpsd, 0, EnumSessions_cb_join,
                                     pDP[1], 0 );
-    checkHR( DP_OK, hr );
+    todo_wine checkHR( DP_OK, hr );
+
+    if ( hr != DP_OK )
+    {
+        skip( "dplay not implemented enough for this test yet\n" );
+        return;
+    }
 
     hr = IDirectPlayX_CreatePlayer( pDP[1], &dpid[1],
                                     NULL, NULL, NULL, 0, 0 );
@@ -6249,7 +6286,7 @@ static void test_remote_data_replication(void)
         checkFlags( DPPLAYER_LOCAL, dwFlags, FLAGS_DPPLAYER );
         /* Remote (0,1) (1,0) */
         IDirectPlayX_GetPlayerFlags( pDP[i], dpid[!i], &dwFlags );
-        checkFlags( 0, dwFlags, FLAGS_DPPLAYER );
+        todo_wine checkFlags( 0, dwFlags, FLAGS_DPPLAYER );
     }
 
     /* Set data for a local player */
@@ -6440,13 +6477,8 @@ static void test_host_migration(void)
 
     /* Host */
     hr = IDirectPlayX_Open( pDP[0], &dpsd, DPOPEN_CREATE );
-    todo_wine checkHR( DP_OK, hr );
+    checkHR( DP_OK, hr );
 
-    if ( hr != DP_OK )
-    {
-        todo_wine win_skip( "dplay not implemented enough for this test yet\n" );
-        return;
-    }
 
     hr = IDirectPlayX_CreatePlayer( pDP[0], &dpid[0], NULL, NULL, NULL, 0, 0 );
     checkHR( DP_OK, hr );
@@ -6454,7 +6486,13 @@ static void test_host_migration(void)
     /* Peer */
     hr = IDirectPlayX_EnumSessions( pDP[1], &dpsd, 0, EnumSessions_cb_join,
                                     pDP[1], 0 );
-    checkHR( DP_OK, hr );
+    todo_wine checkHR( DP_OK, hr );
+
+    if ( hr != DP_OK )
+    {
+        skip( "dplay not implemented enough for this test yet\n" );
+        return;
+    }
 
     hr = IDirectPlayX_CreatePlayer( pDP[1], &dpid[1], NULL, NULL, NULL, 0, 0 );
     checkHR( DP_OK, hr );

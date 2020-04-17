@@ -993,6 +993,11 @@ static HRESULT WINAPI IDirectPlay4Impl_Close( IDirectPlay4 *iface )
         hr = (*This->dp2->spData.lpCB->Close)();
     }
 
+    if ( !FAILED(hr) )
+    {
+        This->dp2->bConnectionOpen = FALSE;
+    }
+
     return hr;
 }
 
@@ -1089,11 +1094,6 @@ static HRESULT DP_IF_CreateGroup( IDirectPlayImpl *This, void *lpMsgHdr, DPID *l
   TRACE( "(%p)->(%p,%p,%p,%p,0x%08x,0x%08x,%u)\n",
          This, lpMsgHdr, lpidGroup, lpGroupName, lpData, dwDataSize,
          dwFlags, bAnsi );
-
-  if( This->dp2->connectionInitialized == NO_PROVIDER )
-  {
-    return DPERR_UNINITIALIZED;
-  }
 
   /* If the name is not specified, we must provide one */
   if( DPID_UNKNOWN == *lpidGroup )
@@ -1235,6 +1235,19 @@ static HRESULT WINAPI IDirectPlay4AImpl_CreateGroup( IDirectPlay4A *iface, DPID 
 {
     IDirectPlayImpl *This = impl_from_IDirectPlay4A( iface );
 
+    if( This->dp2->connectionInitialized == NO_PROVIDER )
+    {
+        return DPERR_UNINITIALIZED;
+    }
+
+    if( lpidGroup == NULL ||
+        !This->dp2->bConnectionOpen ||
+        dwDataSize >= MAXDWORD ||
+        ( lpData == NULL && dwDataSize != 0 ) )
+    {
+        return DPERR_INVALIDPARAMS;
+    }
+
     *lpidGroup = DPID_UNKNOWN;
 
     return DP_IF_CreateGroup( This, NULL, lpidGroup, lpGroupName, lpData, dwDataSize, dwFlags,
@@ -1245,6 +1258,19 @@ static HRESULT WINAPI IDirectPlay4Impl_CreateGroup( IDirectPlay4 *iface, DPID *l
         DPNAME *lpGroupName, void *lpData, DWORD dwDataSize, DWORD dwFlags )
 {
     IDirectPlayImpl *This = impl_from_IDirectPlay4( iface );
+
+    if( This->dp2->connectionInitialized == NO_PROVIDER )
+    {
+        return DPERR_UNINITIALIZED;
+    }
+
+    if( lpidGroup == NULL ||
+        !This->dp2->bConnectionOpen ||
+        dwDataSize >= MAXDWORD ||
+        ( lpData == NULL && dwDataSize != 0 ) )
+    {
+        return DPERR_INVALIDPARAMS;
+    }
 
     *lpidGroup = DPID_UNKNOWN;
 
@@ -1507,10 +1533,6 @@ static HRESULT DP_IF_CreatePlayer( IDirectPlayImpl *This, void *lpMsgHdr, DPID *
   TRACE( "(%p)->(%p,%p,%p,%p,0x%08x,0x%08x,%u)\n",
          This, lpidPlayer, lpPlayerName, hEvent, lpData,
          dwDataSize, dwFlags, bAnsi );
-  if( This->dp2->connectionInitialized == NO_PROVIDER )
-  {
-    return DPERR_UNINITIALIZED;
-  }
 
   if( dwFlags == 0 )
   {
@@ -1582,9 +1604,17 @@ static HRESULT DP_IF_CreatePlayer( IDirectPlayImpl *This, void *lpMsgHdr, DPID *
   }
   else
   {
-    /* FIXME: Would be nice to perhaps verify that we don't already have
-     *        this player.
-     */
+    /* Verify that we don't already have this player */
+
+    lpPlayerList lpPlayers = NULL;
+    DPQ_FIND_ENTRY( This->dp2->lpSysGroup->players, players,
+                    lpPData->dpid, ==, *lpidPlayer, lpPlayers );
+
+    if (lpPlayers != NULL)
+    {
+      return DPERR_CANTCREATEPLAYER;
+    }
+
   }
 
   /* We pass creation flags, so we can distinguish sysplayers and not count them in the current
@@ -1736,9 +1766,19 @@ static HRESULT WINAPI IDirectPlay4AImpl_CreatePlayer( IDirectPlay4A *iface, DPID
 {
   IDirectPlayImpl *This = impl_from_IDirectPlay4A( iface );
 
-  if( lpidPlayer == NULL )
+  if( This->dp2->connectionInitialized == NO_PROVIDER )
+  {
+    return DPERR_UNINITIALIZED;
+  }
+
+  if( lpidPlayer == NULL || !This->dp2->bConnectionOpen )
   {
     return DPERR_INVALIDPARAMS;
+  }
+
+  if ( This->dp2->lpSessionDesc->dwFlags & DPSESSION_NEWPLAYERSDISABLED )
+  {
+    return DPERR_CANTCREATEPLAYER;
   }
 
   if( dwFlags & DPPLAYER_SERVERPLAYER )
@@ -1759,9 +1799,19 @@ static HRESULT WINAPI IDirectPlay4Impl_CreatePlayer( IDirectPlay4 *iface, DPID *
 {
   IDirectPlayImpl *This = impl_from_IDirectPlay4( iface );
 
-  if( lpidPlayer == NULL )
+  if( This->dp2->connectionInitialized == NO_PROVIDER )
+  {
+    return DPERR_UNINITIALIZED;
+  }
+
+  if( lpidPlayer == NULL || !This->dp2->bConnectionOpen )
   {
     return DPERR_INVALIDPARAMS;
+  }
+
+  if ( This->dp2->lpSessionDesc->dwFlags & DPSESSION_NEWPLAYERSDISABLED )
+  {
+    return DPERR_CANTCREATEPLAYER;
   }
 
   if( dwFlags & DPPLAYER_SERVERPLAYER )
@@ -2166,6 +2216,16 @@ static HRESULT WINAPI IDirectPlay4Impl_EnumGroupPlayers( IDirectPlay4 *iface, DP
     if ( This->dp2->connectionInitialized == NO_PROVIDER )
         return DPERR_UNINITIALIZED;
 
+    if ( !This->dp2->bConnectionOpen )
+    {
+        return DPERR_NOSESSIONS;
+    }
+
+    if ( !enumplayercb || ( ( flags & DPENUMGROUPS_SESSION ) && !instance ) )
+    {
+        return DPERR_INVALIDPARAMS;
+    }
+
     /* Find the group */
     if ( ( gdata = DP_FindAnyGroup( This, group ) ) == NULL )
         return DPERR_INVALIDGROUP;
@@ -2442,7 +2502,10 @@ static HRESULT WINAPI IDirectPlay4Impl_EnumSessions( IDirectPlay4 *iface, DPSESS
     if ( This->dp2->connectionInitialized == NO_PROVIDER )
         return DPERR_UNINITIALIZED;
 
-    /* Can't enumerate if the interface is already open */
+    if( !sdesc || (sdesc->dwSize != sizeof(DPSESSIONDESC2)) )
+        return DPERR_INVALIDPARAMS;
+
+    /* Can't enumerate if the session is already open */
     if ( This->dp2->bConnectionOpen )
         return DPERR_GENERIC;
 
@@ -2633,6 +2696,9 @@ static HRESULT WINAPI IDirectPlay4Impl_GetGroupData( IDirectPlay4 *iface, DPID g
 
     if ( ( gdata = DP_FindAnyGroup( This, group ) ) == NULL )
         return DPERR_INVALIDGROUP;
+
+    if ( !size )
+        return DPERR_INVALIDPARAMS;
 
     /* How much buffer is required? */
     if ( flags & DPSET_LOCAL )
@@ -3100,7 +3166,12 @@ static HRESULT DP_GetSessionDesc( IDirectPlayImpl *This, void *lpData, DWORD *lp
     return DPERR_UNINITIALIZED;
   }
 
-  if( ( lpData == NULL ) && ( lpdwDataSize == NULL ) )
+  if( !This->dp2->bConnectionOpen )
+  {
+    return DPERR_NOSESSIONS;
+  }
+
+  if( ( lpdwDataSize == NULL ) || ( *lpdwDataSize >= MAXDWORD ) )
   {
     return DPERR_INVALIDPARAMS;
   }
@@ -3211,14 +3282,9 @@ static HRESULT DP_SecureOpen( IDirectPlayImpl *This, const DPSESSIONDESC2 *lpsd,
   FIXME( "(%p)->(%p,0x%08x,%p,%p): partial stub\n",
          This, lpsd, dwFlags, lpSecurity, lpCredentials );
 
-  if( This->dp2->connectionInitialized == NO_PROVIDER )
+  if( ( lpsd == NULL ) ||
+      ( lpsd->dwSize != sizeof(DPSESSIONDESC2) ) )
   {
-    return DPERR_UNINITIALIZED;
-  }
-
-  if( lpsd->dwSize != sizeof(DPSESSIONDESC2) )
-  {
-    TRACE( ": rejecting invalid dpsd size (%d).\n", lpsd->dwSize );
     return DPERR_INVALIDPARAMS;
   }
 
@@ -3231,7 +3297,18 @@ static HRESULT DP_SecureOpen( IDirectPlayImpl *This, const DPSESSIONDESC2 *lpsd,
   /* If we're enumerating, kill the thread */
   DP_KillEnumSessionThread( This );
 
-  if( dwFlags & DPOPEN_CREATE )
+  if( dwFlags & DPOPEN_JOIN )
+  {
+    LPDPSESSIONDESC2 current = NULL;
+    while( ( current = NS_WalkSessions( This->dp2->lpNameServerData ) ) )
+    {
+      if ( IsEqualGUID( &lpsd->guidInstance, &current->guidInstance ) )
+        break;
+    }
+    if ( current == NULL )
+      return DPERR_NOSESSIONS;
+  }
+  else if( dwFlags & DPOPEN_CREATE )
   {
     /* Rightoo - this computer is the host and the local computer needs to be
        the name server so that others can join this session */
@@ -3308,6 +3385,10 @@ static HRESULT DP_SecureOpen( IDirectPlayImpl *This, const DPSESSIONDESC2 *lpsd,
   {
     ERR( "Couldn't create name server/system player: %s\n",
          DPLAYX_HresultToString(hr) );
+  }
+  else
+  {
+    This->dp2->bConnectionOpen = TRUE;
   }
 
   return hr;
@@ -3672,7 +3753,7 @@ static HRESULT WINAPI IDirectPlay4Impl_SetPlayerData( IDirectPlay4 *iface, DPID 
         return DPERR_UNINITIALIZED;
 
     /* Parameter check */
-    if ( !data && size )
+    if ( ( !data && size ) || ( size >= MAXDWORD ) )
         return DPERR_INVALIDPARAMS;
 
     /* Find the pointer to the data for this player */
@@ -3772,14 +3853,18 @@ static HRESULT DP_SetSessionDesc( IDirectPlayImpl *This, const DPSESSIONDESC2 *l
   TRACE( "(%p)->(%p,0x%08x,%u,%u)\n",
          This, lpSessDesc, dwFlags, bInitial, bAnsi );
 
-  if( This->dp2->connectionInitialized == NO_PROVIDER )
-  {
-    return DPERR_UNINITIALIZED;
-  }
-
-  if( dwFlags )
+  if( dwFlags || (lpSessDesc == NULL) )
   {
     return DPERR_INVALIDPARAMS;
+  }
+
+  /* Illegal combinations of flags */
+  if ( ( lpSessDesc->dwFlags & DPSESSION_MIGRATEHOST ) &&
+       ( lpSessDesc->dwFlags & ( DPSESSION_CLIENTSERVER |
+                                 DPSESSION_MULTICASTSERVER |
+                                 DPSESSION_SECURESERVER ) ) )
+  {
+    return DPERR_INVALIDFLAGS;
   }
 
   /* Only the host is allowed to update the session desc */
@@ -3852,6 +3937,17 @@ static HRESULT WINAPI IDirectPlay4AImpl_SetSessionDesc( IDirectPlay4A *iface,
         DPSESSIONDESC2 *lpSessDesc, DWORD dwFlags )
 {
     IDirectPlayImpl *This = impl_from_IDirectPlay4A( iface );
+
+    if ( This->dp2->connectionInitialized == NO_PROVIDER )
+    {
+        return DPERR_UNINITIALIZED;
+    }
+
+    if ( !This->dp2->bConnectionOpen )
+    {
+        return DPERR_NOSESSIONS;
+    }
+
     return DP_SetSessionDesc( This, lpSessDesc, dwFlags, FALSE, TRUE );
 }
 
@@ -3859,6 +3955,17 @@ static HRESULT WINAPI IDirectPlay4Impl_SetSessionDesc( IDirectPlay4 *iface,
         DPSESSIONDESC2 *lpSessDesc, DWORD dwFlags )
 {
     IDirectPlayImpl *This = impl_from_IDirectPlay4( iface );
+
+    if ( This->dp2->connectionInitialized == NO_PROVIDER )
+    {
+        return DPERR_UNINITIALIZED;
+    }
+
+    if ( !This->dp2->bConnectionOpen )
+    {
+        return DPERR_NOSESSIONS;
+    }
+
     return DP_SetSessionDesc( This, lpSessDesc, dwFlags, FALSE, TRUE );
 }
 
@@ -4029,11 +4136,6 @@ static HRESULT DP_IF_CreateGroupInGroup( IDirectPlayImpl *This, void *lpMsgHdr, 
          This, idParentGroup, lpidGroup, lpGroupName, lpData,
          dwDataSize, dwFlags, bAnsi );
 
-  if( This->dp2->connectionInitialized == NO_PROVIDER )
-  {
-    return DPERR_UNINITIALIZED;
-  }
-
   /* Verify that the specified parent is valid */
   if( ( lpGParentData = DP_FindAnyGroup(This, idParentGroup ) ) == NULL )
     return DPERR_INVALIDGROUP;
@@ -4126,6 +4228,19 @@ static HRESULT WINAPI IDirectPlay4AImpl_CreateGroupInGroup( IDirectPlay4A *iface
 {
     IDirectPlayImpl *This = impl_from_IDirectPlay4A( iface );
 
+    if( This->dp2->connectionInitialized == NO_PROVIDER )
+    {
+        return DPERR_UNINITIALIZED;
+    }
+
+    if( lpidGroup == NULL ||
+        !This->dp2->bConnectionOpen ||
+        dwDataSize >= MAXDWORD ||
+        ( lpData == NULL && dwDataSize != 0 ) )
+    {
+        return DPERR_INVALIDPARAMS;
+    }
+
     *lpidGroup = DPID_UNKNOWN;
 
     return DP_IF_CreateGroupInGroup( This, NULL, idParentGroup, lpidGroup, lpGroupName, lpData,
@@ -4136,6 +4251,19 @@ static HRESULT WINAPI IDirectPlay4Impl_CreateGroupInGroup( IDirectPlay4 *iface, 
         DPID *lpidGroup, DPNAME *lpGroupName, void *lpData, DWORD dwDataSize, DWORD dwFlags )
 {
     IDirectPlayImpl *This = impl_from_IDirectPlay4( iface );
+
+    if ( This->dp2->connectionInitialized == NO_PROVIDER )
+    {
+        return DPERR_UNINITIALIZED;
+    }
+
+    if ( lpidGroup == NULL ||
+        !This->dp2->bConnectionOpen ||
+        dwDataSize >= MAXDWORD ||
+        ( lpData == NULL && dwDataSize != 0 ) )
+    {
+        return DPERR_INVALIDPARAMS;
+    }
 
     *lpidGroup = DPID_UNKNOWN;
 
@@ -4527,6 +4655,16 @@ static HRESULT WINAPI IDirectPlay4Impl_EnumGroupsInGroup( IDirectPlay4 *iface, D
 
     if ( This->dp2->connectionInitialized == NO_PROVIDER )
         return DPERR_UNINITIALIZED;
+
+    if ( !This->dp2->bConnectionOpen )
+    {
+        return DPERR_NOSESSIONS;
+    }
+
+    if ( !enumplayercb || ( ( flags & DPENUMGROUPS_SESSION ) && !instance ) )
+    {
+        return DPERR_INVALIDPARAMS;
+    }
 
     if ( ( gdata = DP_FindAnyGroup(This, group ) ) == NULL )
         return DPERR_INVALIDGROUP;
