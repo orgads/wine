@@ -124,6 +124,8 @@ static HRESULT WINAPI DPWSCB_GetCaps( LPDPSP_GETCAPSDATA data )
         data->lpCaps->dwMaxPlayers    = DPWS_MAXPLAYERS;
     }
 
+    /* Substract size of service provider header */
+    data->lpCaps->dwMaxBufferSize -= sizeof(DPSP_MSG_HEADER);
     return DP_OK;
 }
 
