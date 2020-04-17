@@ -200,6 +200,8 @@ HRESULT DP_HandleMessage( IDirectPlayImpl *This, void *lpMessageBody,
         DWORD  dwMessageBodySize, void *lpMessageHeader, WORD wCommandId, WORD wVersion,
         void **lplpReply, DWORD *lpdwMsgSize ) DECLSPEC_HIDDEN;
 lpPlayerList DP_FindPlayer( IDirectPlayImpl* This, DPID dpid );
+HRESULT DP_SetSessionDesc( IDirectPlayImpl *This, const DPSESSIONDESC2 *lpSessDesc,
+        DWORD dwFlags, BOOL bInitial, BOOL bAnsi  );
 
 /* DP SP external interfaces into DirectPlay */
 extern HRESULT DP_GetSPPlayerData( IDirectPlayImpl *lpDP, DPID idPlayer, void **lplpData ) DECLSPEC_HIDDEN;

@@ -62,8 +62,6 @@ static BOOL CALLBACK cbDeletePlayerFromAllGroups( DPID dpId,
 static lpGroupData DP_FindAnyGroup( IDirectPlayImpl *This, DPID dpid );
 
 /* Helper methods for player/group interfaces */
-static HRESULT DP_SetSessionDesc( IDirectPlayImpl *This, const DPSESSIONDESC2 *lpSessDesc,
-        DWORD dwFlags, BOOL bInitial, BOOL bAnsi );
 static HRESULT DP_SP_SendEx( IDirectPlayImpl *This, DWORD dwFlags, void *lpData, DWORD dwDataSize,
         DWORD dwPriority, DWORD dwTimeout, void *lpContext, DWORD *lpdwMsgID );
 static BOOL DP_BuildCompoundAddr( GUID guidDataType, LPGUID lpcSpGuid,
@@ -3946,7 +3944,7 @@ static HRESULT WINAPI IDirectPlay4Impl_SetPlayerName( IDirectPlay4 *iface, DPID 
     return DP_IF_SetPlayerName( This, idPlayer, lpPlayerName, dwFlags, FALSE );
 }
 
-static HRESULT DP_SetSessionDesc( IDirectPlayImpl *This, const DPSESSIONDESC2 *lpSessDesc,
+HRESULT DP_SetSessionDesc( IDirectPlayImpl *This, const DPSESSIONDESC2 *lpSessDesc,
         DWORD dwFlags, BOOL bInitial, BOOL bAnsi  )
 {
   DWORD            dwRequiredSize;
@@ -3954,26 +3952,6 @@ static HRESULT DP_SetSessionDesc( IDirectPlayImpl *This, const DPSESSIONDESC2 *l
 
   TRACE( "(%p)->(%p,0x%08x,%u,%u)\n",
          This, lpSessDesc, dwFlags, bInitial, bAnsi );
-
-  if( dwFlags || (lpSessDesc == NULL) )
-  {
-    return DPERR_INVALIDPARAMS;
-  }
-
-  /* Illegal combinations of flags */
-  if ( ( lpSessDesc->dwFlags & DPSESSION_MIGRATEHOST ) &&
-       ( lpSessDesc->dwFlags & ( DPSESSION_CLIENTSERVER |
-                                 DPSESSION_MULTICASTSERVER |
-                                 DPSESSION_SECURESERVER ) ) )
-  {
-    return DPERR_INVALIDFLAGS;
-  }
-
-  /* Only the host is allowed to update the session desc */
-  if( !This->dp2->bHostInterface )
-  {
-    return DPERR_ACCESSDENIED;
-  }
 
   /* FIXME: Copy into This->dp2->lpSessionDesc */
   dwRequiredSize = DP_CalcSessionDescSize( lpSessDesc, bAnsi );
@@ -4050,6 +4028,26 @@ static HRESULT WINAPI IDirectPlay4AImpl_SetSessionDesc( IDirectPlay4A *iface,
         return DPERR_NOSESSIONS;
     }
 
+    if ( dwFlags || !lpSessDesc )
+    {
+        return DPERR_INVALIDPARAMS;
+    }
+
+    /* Illegal combinations of flags */
+    if ( ( lpSessDesc->dwFlags & DPSESSION_MIGRATEHOST ) &&
+         ( lpSessDesc->dwFlags & ( DPSESSION_CLIENTSERVER |
+                                 DPSESSION_MULTICASTSERVER |
+                                 DPSESSION_SECURESERVER ) ) )
+    {
+        return DPERR_INVALIDFLAGS;
+    }
+
+    /* Only the host is allowed to update the session desc */
+    if ( !This->dp2->bHostInterface )
+    {
+        return DPERR_ACCESSDENIED;
+    }
+
     return DP_SetSessionDesc( This, lpSessDesc, dwFlags, FALSE, TRUE );
 }
 
@@ -4066,6 +4064,26 @@ static HRESULT WINAPI IDirectPlay4Impl_SetSessionDesc( IDirectPlay4 *iface,
     if ( !This->dp2->bConnectionOpen )
     {
         return DPERR_NOSESSIONS;
+    }
+
+    if ( dwFlags || !lpSessDesc )
+    {
+        return DPERR_INVALIDPARAMS;
+    }
+
+    /* Illegal combinations of flags */
+    if ( ( lpSessDesc->dwFlags & DPSESSION_MIGRATEHOST ) &&
+         ( lpSessDesc->dwFlags & ( DPSESSION_CLIENTSERVER |
+                                 DPSESSION_MULTICASTSERVER |
+                                 DPSESSION_SECURESERVER ) ) )
+    {
+        return DPERR_INVALIDFLAGS;
+    }
+
+    /* Only the host is allowed to update the session desc */
+    if( !This->dp2->bHostInterface )
+    {
+        return DPERR_ACCESSDENIED;
     }
 
     return DP_SetSessionDesc( This, lpSessDesc, dwFlags, FALSE, TRUE );
