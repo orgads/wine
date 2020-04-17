@@ -5439,9 +5439,11 @@ static HRESULT WINAPI IDirectPlay4Impl_SendEx( IDirectPlay4 *iface, DPID from, D
         DWORD flags, void *data, DWORD size, DWORD priority, DWORD timeout, void *context,
         DWORD *msgid )
 {
+    lpGroupData  lpGData;
+    BOOL         bSendToGroup;
     IDirectPlayImpl *This = impl_from_IDirectPlay4( iface );
 
-    FIXME( "(%p)->(0x%08x,0x%08x,0x%08x,%p,0x%08x,0x%08x,0x%08x,%p,%p): semi-stub\n",
+    TRACE( "(%p)->(0x%08x,0x%08x,0x%08x,%p,0x%08x,0x%08x,0x%08x,%p,%p,%u)\n",
             This, from, to, flags, data, size, priority, timeout, context, msgid );
 
     if ( This->dp2->connectionInitialized == NO_PROVIDER )
@@ -5454,50 +5456,85 @@ static HRESULT WINAPI IDirectPlay4Impl_SendEx( IDirectPlay4 *iface, DPID from, D
 
     /* NOTE: Can't send messages to yourself - this will be trapped in receive */
 
-    /* Verify that the message is being sent from a valid local player. The
-     * from player may be anonymous DPID_UNKNOWN
-     */
+    /* Check idFrom points to a valid player */
     if ( from != DPID_UNKNOWN && !DP_FindPlayer( This, from ) )
     {
-        WARN( "INFO: Invalid from player 0x%08x\n", from );
+        ERR( "Invalid from player 0x%08x\n", from );
         return DPERR_INVALIDPLAYER;
     }
 
-    /* Verify that the message is being sent to a valid player, group or to
-     * everyone. If it's valid, send it to those players.
-     */
+    /* Check idTo: it can be a player or a group */
     if ( to == DPID_ALLPLAYERS )
     {
-        /* See if SP has the ability to multicast. If so, use it */
-        if ( This->dp2->spData.lpCB->SendToGroupEx )
-            FIXME( "Use group sendex to group 0\n" );
-        else if ( This->dp2->spData.lpCB->SendToGroup ) /* obsolete interface */
-            FIXME( "Use obsolete group send to group 0\n" );
-        else /* No multicast, multiplicate */
-            FIXME( "Send to all players using EnumPlayersInGroup\n" );
+        bSendToGroup = TRUE;
+        lpGData = This->dp2->lpSysGroup;
     }
     else if ( DP_FindPlayer( This, to ) )
-    {
-        /* Have the service provider send this message */
-        /* FIXME: Could optimize for local interface sends */
-        return DP_SP_SendEx( This, flags, data, size, priority, timeout, context, msgid );
-    }
-    else if ( DP_FindAnyGroup( This, to ) )
-    {
-        /* See if SP has the ability to multicast. If so, use it */
-        if ( This->dp2->spData.lpCB->SendToGroupEx )
-            FIXME( "Use group sendex\n" );
-        else if ( This->dp2->spData.lpCB->SendToGroup ) /* obsolete interface */
-            FIXME( "Use obsolete group send to group\n" );
-        else /* No multicast, multiplicate */
-            FIXME( "Send to all players using EnumPlayersInGroup\n" );
-
-    }
+        bSendToGroup = FALSE;
+    else if ( ( lpGData = DP_FindAnyGroup( This, to ) ) )
+        bSendToGroup = TRUE;
     else
         return DPERR_INVALIDPLAYER;
+    if ( bSendToGroup )
+    {
+#if 0
+        DPSP_SENDTOGROUPEXDATA ex_data;
 
-    /* FIXME: Should return what the send returned */
-    return DP_OK;
+        ex_data.lpISP         = This->dp2->spData.lpISP;
+        ex_data.dwFlags       = flags;
+        ex_data.idGroupTo     = to;
+        ex_data.idPlayerFrom  = from;
+        ex_data.lpSendBuffers = data;
+        ex_data.cBuffers      = NULL;
+        ex_data.dwMessageSize = size;
+        ex_data.dwPriority    = priority;
+        ex_data.dwTimeout     = timeout;
+        ex_data.lpDPContext   = context;
+        ex_data.lpdwSPMsgID   = msgid;
+
+        return (*This->dp2->spData.lpCB->SendToGroupEx)( &ex_data );
+#endif
+        DPSP_SENDDATA ex_data;
+        lpPlayerList lpPList;
+
+        ex_data.dwFlags        = flags;
+        ex_data.idPlayerFrom   = from;
+        ex_data.lpMessage      = data;
+        ex_data.dwMessageSize  = size;
+        ex_data.bSystemMessage = FALSE;
+        ex_data.lpISP          = This->dp2->spData.lpISP;
+
+        if ( (lpPList = DPQ_FIRST( lpGData->players )) )
+        {
+            do
+            {
+                if ( ~lpPList->lpPData->dwFlags & DPLAYI_PLAYER_PLAYERLOCAL )
+                {
+                    ex_data.idPlayerTo = lpPList->lpPData->dpid;
+                    (*This->dp2->spData.lpCB->Send)( &ex_data );
+                }
+            }
+            while( (lpPList = DPQ_NEXT( lpPList->players )) );
+        }
+    }
+    else
+    {
+        DPSP_SENDDATA ex_data;
+
+        ex_data.dwFlags        = flags;
+        ex_data.idPlayerFrom   = from;
+        ex_data.idPlayerTo     = to;
+        ex_data.lpMessage      = data;
+        ex_data.dwMessageSize  = size;
+        ex_data.bSystemMessage = FALSE;
+        ex_data.lpISP          = This->dp2->spData.lpISP;
+
+        return (*This->dp2->spData.lpCB->Send)( &ex_data );
+    }
+
+    /* Have the service provider send this message */
+    return DP_SP_SendEx( This, flags, data, size, priority,
+      timeout, context, msgid );
 }
 
 static HRESULT DP_SP_SendEx( IDirectPlayImpl *This, DWORD dwFlags, void *lpData, DWORD dwDataSize,
@@ -5505,7 +5542,8 @@ static HRESULT DP_SP_SendEx( IDirectPlayImpl *This, DWORD dwFlags, void *lpData,
 {
   LPDPMSG lpMElem;
 
-  FIXME( ": stub\n" );
+  FIXME( "(%p)->(0x%08x,%p,%d,%d,%d,%p,%p): stub\n",
+         This, dwFlags, lpData, dwDataSize, dwPriority, dwTimeout, lpContext, lpdwMsgID );
 
   /* FIXME: This queuing should only be for async messages */
 
@@ -5513,6 +5551,7 @@ static HRESULT DP_SP_SendEx( IDirectPlayImpl *This, DWORD dwFlags, void *lpData,
   lpMElem->msg = HeapAlloc( GetProcessHeap(), HEAP_ZERO_MEMORY, dwDataSize );
 
   CopyMemory( lpMElem->msg, lpData, dwDataSize );
+  lpMElem->dwMsgSize = dwDataSize;
 
   /* FIXME: Need to queue based on priority */
   DPQ_INSERT( This->dp2->sendMsgs, lpMElem, msgs );
