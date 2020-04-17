@@ -382,7 +382,8 @@ HRESULT DP_HandleMessage( IDirectPlayImpl *This, void *lpMessageBody,
     }
 
     case DPMSGCMD_REQUESTPLAYERREPLY:
-      DP_MSG_ReplyReceived( This, wCommandId, lpMessageBody, dwMessageBodySize );
+      DP_MSG_ReplyReceived( This, wCommandId, lpMessageHeader,
+                            lpMessageBody, dwMessageBodySize );
       break;
 
     case DPMSGCMD_ADDFORWARDREQUEST:
@@ -403,7 +404,8 @@ HRESULT DP_HandleMessage( IDirectPlayImpl *This, void *lpMessageBody,
       break;
 
     case DPMSGCMD_SUPERENUMPLAYERSREPLY:
-      DP_MSG_ReplyReceived( This, wCommandId, lpMessageBody, dwMessageBodySize );
+      DP_MSG_ReplyReceived( This, wCommandId, lpMessageHeader,
+                            lpMessageBody, dwMessageBodySize );
       break;
 
     case DPMSGCMD_ADDFORWARDACK:

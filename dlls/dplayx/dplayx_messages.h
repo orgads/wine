@@ -38,8 +38,9 @@ HRESULT DP_MSG_ForwardPlayerCreation( IDirectPlayImpl *This, DPID dpidServer ) D
 void DP_MSG_ReplyToEnumPlayersRequest( IDirectPlayImpl* lpDP, LPVOID* lplpReply,
                                        LPDWORD lpdwMsgSize ) DECLSPEC_HIDDEN;
 
-void DP_MSG_ReplyReceived( IDirectPlayImpl *This, WORD wCommandId,
-                           LPCVOID lpMsgBody, DWORD dwMsgBodySize ) DECLSPEC_HIDDEN;
+BOOL DP_MSG_ReplyReceived( IDirectPlayImpl *This, WORD wCommandId,
+                           LPCVOID lpMsgHdr, LPCVOID lpMsgBody,
+						   DWORD dwMsgBodySize ) DECLSPEC_HIDDEN;
 void DP_MSG_ErrorReceived( IDirectPlayImpl *This, WORD wCommandId,
                            LPCVOID lpMsgBody, DWORD dwMsgBodySize ) DECLSPEC_HIDDEN;
 
