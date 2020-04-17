@@ -47,7 +47,6 @@ extern HRESULT DPL_CreateCompoundAddress
 
 
 /* Local function prototypes */
-static lpPlayerList DP_FindPlayer( IDirectPlayImpl *This, DPID dpid );
 static BOOL DP_CopyDPNAMEStruct( LPDPNAME lpDst, const DPNAME *lpSrc, BOOL bAnsi );
 static HRESULT DP_IF_CreatePlayer( IDirectPlayImpl *This, void *lpMsgHdr, DPID *lpidPlayer,
         DPNAME *lpPlayerName, HANDLE hEvent, void *lpData, DWORD dwDataSize, DWORD dwFlags,
@@ -1480,7 +1479,7 @@ static void DP_DeletePlayer( IDirectPlayImpl *This, DPID dpid )
   HeapFree( GetProcessHeap(), 0, lpPList );
 }
 
-static lpPlayerList DP_FindPlayer( IDirectPlayImpl *This, DPID dpid )
+lpPlayerList DP_FindPlayer( IDirectPlayImpl *This, DPID dpid )
 {
   lpPlayerList lpPlayers;
 
