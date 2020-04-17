@@ -2394,11 +2394,10 @@ static HRESULT WINAPI IDirectPlay4Impl_EnumGroupPlayers( IDirectPlay4 *iface, DP
     /* Walk the players in this group */
     for( plist = DPQ_FIRST( gdata->players ); ; plist = DPQ_NEXT( plist->players ) )
     {
-        /* We do not enum the name server or app server as they are of no
+        /* We do not enum any system players as they are of no
          * consequence to the end user.
          */
-        if ( ( plist->lpPData->dpid != DPID_NAME_SERVER ) &&
-                ( plist->lpPData->dpid != DPID_SERVERPLAYER ) )
+        if ( plist->lpPData->dwFlags & DPLAYI_PLAYER_SYSPLAYER )
         {
             /* FIXME: Need to add stuff for flags checking */
             if ( !enumplayercb( plist->lpPData->dpid, DPPLAYERTYPE_PLAYER,
